@@ -1,0 +1,44 @@
+{
+  "name": "rx/thruway-client",
+  "type": "library",
+  "description": "RxPHP WAMP client",
+  "keywords": [
+    "rxphp",
+    "reactivex",
+    "rx.php",
+    "thruway",
+    "WAMP"
+  ],
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "David Dan",
+      "email": "davidwdan@gmail.com",
+      "role": "Developer"
+    },
+    {
+      "name": "Matt Bonneau",
+      "email": "matt@bonneau.net",
+      "role": "Developer"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Rx\\Thruway\\": "src/"
+    }
+  },
+  "require": {
+    "reactivex/rxphp": "^1.0.0",
+    "voryx/thruway-common": "^1.0.0",
+    "php": "^7.0",
+    "ratchet/pawl": "^0.2.2",
+    "rx/operator-extras": "^0.3.0",
+    "voryx/event-loop": "^0.2.0"
+  },
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "git@github.com:voryx/ThruwayCommon.git"
+    }
+  ]
+}

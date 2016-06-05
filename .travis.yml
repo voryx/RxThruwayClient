@@ -1,0 +1,12 @@
+language: php
+sudo: required
+
+php:
+  - 7
+  - hhvm
+
+install:
+  - composer install
+
+script:
+  - phpunit
