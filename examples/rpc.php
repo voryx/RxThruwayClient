@@ -7,7 +7,7 @@ require __DIR__ . '/../vendor/autoload.php';
 
 $client = new Client('ws://127.0.0.1:9090', "realm1");
 
-$x = $client->register('com.myapp.example', function ($x) {
+$client->register('com.myapp.example', function ($x) {
     return $x;
 })->subscribeCallback(
     function () {
@@ -22,7 +22,7 @@ $x = $client->register('com.myapp.example', function ($x) {
 );
 
 
-$y = $client->call('com.myapp.example', [1234])
+$client->call('com.myapp.example', [1234])
     ->subscribe(new CallbackObserver(
         function ($res) {
             list($args, $argskw, $details) = $res;
@@ -36,5 +36,3 @@ $y = $client->call('com.myapp.example', [1234])
             echo "Call completed", PHP_EOL;
         })
 );
-
-

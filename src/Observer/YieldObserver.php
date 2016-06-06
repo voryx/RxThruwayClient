@@ -3,6 +3,7 @@
 namespace Rx\Thruway\Observer;
 
 use Exception;
+use Rx\Disposable\CompositeDisposable;
 use Rx\Observer\AbstractObserver;
 use Rx\Thruway\Observable\WampInvocationException;
 use Thruway\Message\Message;
@@ -14,11 +15,13 @@ class YieldObserver extends AbstractObserver
 
     private $sendMessage;
     private $progress;
+    private $disposable;
 
     public function __construct(callable $sendMessage, bool $progress = false)
     {
         $this->sendMessage = $sendMessage;
         $this->progress    = $progress;
+        $this->disposable  = new CompositeDisposable();
     }
 
     protected function completed()
@@ -26,6 +29,8 @@ class YieldObserver extends AbstractObserver
         if ($this->progress) {
             // TODO: send last message
         }
+
+        $this->disposable->dispose();
     }
 
     protected function next($args)
@@ -45,6 +50,10 @@ class YieldObserver extends AbstractObserver
 
     protected function sendMessage(Message $msg)
     {
-        call_user_func($this->sendMessage, $msg)->subscribeCallback();
+        $sub = call_user_func($this->sendMessage, $msg)->subscribeCallback(
+        //@todo add logger observer
+        );
+
+        $this->disposable->add($sub);
     }
 }

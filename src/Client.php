@@ -2,18 +2,19 @@
 
 namespace Rx\Thruway;
 
+use Rx\Disposable\CompositeDisposable;
 use Rx\Observable;
+use Rx\Subject\ReplaySubject;
 use Ratchet\Client\WebSocket;
 use React\EventLoop\LoopInterface;
-use Rx\Subject\ReplaySubject;
+use Rx\Thruway\Observer\ChallengeObserver;
 use Thruway\Serializer\JsonSerializer;
-use Rx\Thruway\Observable\CallObservable;
-use Rx\Thruway\Observable\TopicObservable;
-use Rx\Thruway\Observable\RegisterObservable;
-use Rx\Thruway\Observable\WebSocketObservable;
 use Rx\Extra\Observable\FromEventEmitterObservable;
+use Rx\Thruway\Observable\{
+    CallObservable, TopicObservable, RegisterObservable, WebSocketObservable, WampChallengeException
+};
 use Thruway\Message\{
-    Message, HelloMessage, WelcomeMessage
+    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, WelcomeMessage
 };
 
 class Client
@@ -22,11 +23,13 @@ class Client
     private $loop;
     private $realm;
     private $session;
+    private $options;
     private $messages;
     private $webSocket;
     private $serializer;
+    private $disposable;
 
-    public function __construct(string $url, string $realm, LoopInterface $loop = null)
+    public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
         $this->url        = $url;
         $this->loop       = $loop ?? \EventLoop\getLoop();
@@ -35,7 +38,9 @@ class Client
         $this->serializer = new JsonSerializer();
         $this->messages   = $this->messagesFromWebSocket($this->webSocket)->share();
         $this->session    = new ReplaySubject(1);
-        
+        $this->options    = $options;
+        $this->disposable = new CompositeDisposable();
+
         $this->setUpSession();
     }
 
@@ -102,14 +107,43 @@ class Client
         return new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']);
     }
 
+    public function onChallenge(callable $challengeCallback)
+    {
+        $sub = $this->messages
+            ->filter(function (Message $msg) {
+                return $msg instanceof ChallengeMessage;
+            })
+            ->flatMap(function (ChallengeMessage $msg) use ($challengeCallback) {
+                $challengeResult = null;
+                try {
+                    $challengeResult = call_user_func($challengeCallback, Observable::just([$msg->getAuthMethod(), $msg->getDetails()]));
+                } catch (\Exception $e) {
+                    throw new WampChallengeException($msg);
+                }
+                return $challengeResult->take(1);
+            })
+            ->map(function ($signature) {
+                return new AuthenticateMessage($signature);
+            })
+            ->subscribe(new ChallengeObserver($this->webSocket, $this->serializer));
+
+        $this->disposable->add($sub);
+    }
+
+    public function close()
+    {
+        //@todo do other close stuff.  should probably emit on a normal closing subject
+        $this->disposable->dispose();
+    }
+
     /**
      * Emits new sessions onto a session subject
      */
     private function setUpSession()
     {
-        $helloMsg = new HelloMessage($this->realm, new \stdClass());
+        $helloMsg = new HelloMessage($this->realm, (object)$this->options);
 
-        $this->webSocket
+        $sub = $this->webSocket
             ->map(function (WebSocket $ws) use ($helloMsg) {
                 return $ws->send($this->serializer->serialize($helloMsg));
             })
@@ -120,6 +154,8 @@ class Client
                 return $msg instanceof WelcomeMessage;
             })
             ->subscribe($this->session);
+
+        $this->disposable->add($sub);
     }
 
     /**
