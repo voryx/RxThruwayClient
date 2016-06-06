@@ -8,11 +8,11 @@ use Thruway\Common\Utils;
 use Thruway\WampErrorException;
 use Rx\Observer\CallbackObserver;
 use Rx\Disposable\CallbackDisposable;
+use Rx\Thruway\Observer\YieldObserver;
 use Rx\Disposable\CompositeDisposable;
 use Thruway\Message\{
-    Message, RegisteredMessage, RegisterMessage, YieldMessage, ErrorMessage, InvocationMessage, UnregisterMessage
+    Message, RegisteredMessage, RegisterMessage, UnregisteredMessage, ErrorMessage, InvocationMessage, UnregisterMessage
 };
-
 
 /**
  * Class RegisterObservable
@@ -23,17 +23,19 @@ class RegisterObservable extends Observable
 
     private $uri;
     private $options;
-    private $callback;
     private $messages;
     private $sendMessage;
+    private $callback;
+    private $extended;
 
-    function __construct(string $uri, callable $callback, Observable $messages, callable $sendMessage, array $options = [])
+    function __construct(string $uri, callable $callback, Observable $messages, callable $sendMessage, array $options = [], bool $extended = false)
     {
         $this->uri         = $uri;
         $this->options     = $options;
         $this->callback    = $callback;
         $this->messages    = $messages;
         $this->sendMessage = $sendMessage;
+        $this->extended    = $extended;
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -42,54 +44,86 @@ class RegisterObservable extends Observable
         $disposable     = new CompositeDisposable();
         $registerMsg    = new RegisterMessage($requestId, (object)$this->options, $this->uri);
         $registrationId = null;
+        $completed      = false;
+
+        $unregisteredMsg = $this->messages
+            ->filter(function (Message $msg) use ($requestId) {
+                return $msg instanceof UnregisteredMessage && $msg->getRequestId() === $requestId;
+            })
+            ->take(1);
 
         $registeredMsg = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
                 return $msg instanceof RegisteredMessage && $msg->getRequestId() === $requestId;
             })
-            ->take(1);
+            ->take(1)
+            ->share();
 
-        $errorMsg = $this->messages
+        $invocationMsg = $registeredMsg->flatMap(function (RegisteredMessage $registeredMsg) use (&$registrationId) {
+            $registrationId = $registeredMsg->getRegistrationId();
+
+            return $this->messages->filter(function (Message $msg) use ($registeredMsg) {
+                return $msg instanceof InvocationMessage && $msg->getRegistrationId() === $registeredMsg->getRegistrationId();
+            });
+        });
+
+        //Transform WAMP error messages into an error observable
+        $error = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
                 return $msg instanceof ErrorMessage && $msg->getErrorRequestId() === $requestId;
             })
             ->flatMap(function (ErrorMessage $msg) {
                 return Observable::error(new WampErrorException($msg->getErrorURI(), $msg->getArguments()));
             })
+            ->takeUntil($registeredMsg)
             ->take(1);
 
-        $callbackObserver = new CallbackObserver(null, [$observer, 'onError'], [$observer, 'onCompleted']);
-
-        $sub =  call_user_func($this->sendMessage, $registerMsg)
-            ->merge($registeredMsg)
-            ->flatMap(function (RegisteredMessage $registeredMsg) use ($observer, &$registrationId) {
-                $registrationId = $registeredMsg->getRegistrationId();
-                $observer->onNext($registeredMsg);
-
-                $invocationMsg = $this->messages->filter(function (Message $msg) use ($registeredMsg) {
-                    return $msg instanceof InvocationMessage && $msg->getRegistrationId() === $registeredMsg->getRegistrationId();
-                });
-
-                return $invocationMsg->flatMap(function (InvocationMessage $msg) {
-                    $yieldMsg = new YieldMessage($msg->getRequestId(), null, call_user_func_array($this->callback, [$msg->getArguments(), $msg->getArgumentsKw()]));
-
-                    return call_user_func($this->sendMessage, $yieldMsg);
-                });
-            })
-            ->merge($errorMsg)
-            ->subscribe($callbackObserver, $scheduler);
-
-        $disposable->add($sub);
-
-        $disposable->add(new CallbackDisposable(function () use ($requestId, &$registrationId) {
-            echo "registration disposed", PHP_EOL;
-            if (!$registrationId) {
+        $unregister = function () use ($requestId, &$registrationId, &$completed) {
+            if (!$registrationId || $completed) {
                 return;
             }
             $unregisterMsg = new UnregisterMessage(Utils::getUniqueId(), $registrationId);
             call_user_func($this->sendMessage, $unregisterMsg)->subscribeCallback();
+        };
 
-        }));
+        $registerSubscription = call_user_func($this->sendMessage, $registerMsg)
+            ->merge($registeredMsg)
+            ->merge($unregisteredMsg)
+            ->merge($error)
+            ->subscribe(new CallbackObserver(
+                [$observer, 'onNext'],
+                [$observer, 'onError'],
+                function () use (&$completed, $observer, $unregister) {
+                    $unregister();
+                    $completed = true;
+                    $observer->onCompleted();
+                }
+            ), $scheduler);
+
+        $invocationSubscription = $invocationMsg
+            ->flatMap(function (InvocationMessage $msg) {
+
+                try {
+                    if ($this->extended) {
+                        $result = call_user_func_array($this->callback, [$msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails(), $msg]);
+                    } else {
+                        $result = call_user_func_array($this->callback, $msg->getArguments());
+                    }
+                } catch (\Exception $e) {
+                    throw new WampInvocationException($msg);
+                }
+
+                $resultObs = $result instanceof Observable ? $result : Observable::just($result);
+                return $resultObs->map(function ($value) use ($msg) {
+                    return [$value, $msg];
+                });
+            })
+            ->takeUntil($unregisteredMsg)
+            ->subscribe(new YieldObserver($this->sendMessage), $scheduler);
+
+        $disposable->add($invocationSubscription);
+        $disposable->add($registerSubscription);
+        $disposable->add(new CallbackDisposable($unregister));
 
         return $disposable;
     }

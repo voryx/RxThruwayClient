@@ -58,7 +58,53 @@ class Client
             });
     }
 
+    /**
+     * @param string $uri
+     * @param array $args
+     * @param array $argskw
+     * @param array $options
+     * @return CallObservable
+     */
+    public function call(string $uri, array $args = [], array $argskw = [], array $options = null) :CallObservable
+    {
+        return new CallObservable($uri, $this->messages, [$this, 'sendMessage'], $args, $argskw, $options);
+    }
 
+    /**
+     * @param string $uri
+     * @param callable $callback
+     * @param array $options
+     * @return RegisterObservable
+     */
+    public function register(string $uri, callable $callback, array $options = []) :RegisterObservable
+    {
+        return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options);
+    }
+
+    /**
+     * @param string $uri
+     * @param callable $callback
+     * @param array $options
+     * @return RegisterObservable
+     */
+    public function registerExtended(string $uri, callable $callback, array $options = []) :RegisterObservable
+    {
+        return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options, true);
+    }
+
+    /**
+     * @param string $uri
+     * @param array $options
+     * @return TopicObservable
+     */
+    public function topic(string $uri, array $options = []) :TopicObservable
+    {
+        return new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']);
+    }
+
+    /**
+     * Emits new sessions onto a session subject
+     */
     private function setUpSession()
     {
         $helloMsg = new HelloMessage($this->realm, new \stdClass());
@@ -74,39 +120,6 @@ class Client
                 return $msg instanceof WelcomeMessage;
             })
             ->subscribe($this->session);
-    }
-
-    /**
-     * @param string $uri
-     * @param array $args
-     * @param array $argskw
-     * @param array $options
-     * @return Observable
-     */
-    public function call(string $uri, array $args = [], array $argskw = [], array $options = null) :Observable
-    {
-        return new CallObservable($uri, $this->messages, [$this, 'sendMessage'], $args, $argskw, $options);
-    }
-
-    /**
-     * @param string $uri
-     * @param callable $callback
-     * @param array $options
-     * @return Observable
-     */
-    public function register(string $uri, callable $callback, array $options = []) :Observable
-    {
-        return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options);
-    }
-
-    /**
-     * @param string $uri
-     * @param array $options
-     * @return TopicObservable
-     */
-    public function topic(string $uri, array $options = [])
-    {
-        return new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']);
     }
 
     /**
