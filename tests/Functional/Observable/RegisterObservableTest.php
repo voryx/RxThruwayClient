@@ -1,29 +1,34 @@
 <?php
 
-namespace Rx\React\Tests\Functional\Observable;
+namespace Rx\Thruway\Tests\Functional\Observable;
 
 use Rx\Observable;
 use Rx\Thruway\Observable\RegisterObservable;
-use Rx\Functional\FunctionalTestCase;
+use Rx\Thruway\Tests\Functional\FunctionalTestCase;
+use Thruway\Message\ErrorMessage;
 use Thruway\Message\InvocationMessage;
 use Thruway\Message\Message;
 use Thruway\Message\RegisteredMessage;
 use Thruway\Message\RegisterMessage;
-use Thruway\Message\UnregisteredMessage;
 use Thruway\Message\WelcomeMessage;
-use Thruway\Message\YieldMessage;
+use Thruway\WampErrorException;
 
 class RegisterObservableTest extends FunctionalTestCase
 {
 
-    public function callable($value = null)
+    public function callable($first = 0, $second = 0)
     {
-        return 'test';
+        return $first + $second;
     }
 
-    public function callableObs($params)
+    public function callableObs($first = 0, $second = 0)
     {
-        return Observable::interval(100)->take(5);
+        return Observable::just($first + $second);
+    }
+
+    public function callableManyObs($first = 0, $second = 0)
+    {
+        return Observable::fromArray([$first, $second]);
     }
 
     /**
@@ -74,20 +79,14 @@ class RegisterObservableTest extends FunctionalTestCase
     function register_with_no_invocation()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
-        $messagesSent  = 0;
 
-        $sendMessage = function (Message $msg) use ($registeredMsg, &$messagesSent) {
-            $messagesSent++;
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
             }
 
-            if ($msg instanceof UnregisteredMessage) {
-                //unregister when completed
-                $this->assertEquals($this->scheduler->getClock(), 350);
-            }
-
+            $this->recordWampMessage($msg);
             return Observable::emptyObservable();
         };
 
@@ -107,7 +106,11 @@ class RegisterObservableTest extends FunctionalTestCase
             onCompleted(350)
         ], $results->getMessages());
 
-        $this->assertEquals($messagesSent, 2);
+        //Sent Message
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'], //RegisterMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
     }
 
     /**
@@ -116,20 +119,14 @@ class RegisterObservableTest extends FunctionalTestCase
     function register_with_no_invocation_no_complete()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
-        $messagesSent  = 0;
 
-        $sendMessage = function (Message $msg) use ($registeredMsg, &$messagesSent) {
-            $messagesSent++;
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
             }
 
-            if ($msg instanceof UnregisteredMessage) {
-                //unregister when disposed
-                $this->assertEquals($this->scheduler->getClock(), 1000);
-            }
-
+            $this->recordWampMessage($msg);
             return Observable::emptyObservable();
         };
 
@@ -147,7 +144,11 @@ class RegisterObservableTest extends FunctionalTestCase
             onNext(250, $registeredMsg)
         ], $results->getMessages());
 
-        $this->assertEquals($messagesSent, 2);
+        //Sent Message
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'], //RegisterMessage
+            [1000, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
     }
 
     /**
@@ -157,24 +158,14 @@ class RegisterObservableTest extends FunctionalTestCase
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
-        $messagesSent  = 0;
 
-        $sendMessage = function (Message $msg) use ($registeredMsg, &$messagesSent) {
-            $messagesSent++;
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
             }
 
-            if ($msg instanceof UnregisteredMessage) {
-                //unregister when completed
-                $this->assertEquals($this->scheduler->getClock(), 350);
-            }
-
-            if ($msg instanceof YieldMessage) {
-                $this->assertEquals($msg->getArguments()[0], "test");
-            }
-
+            $this->recordWampMessage($msg);
             return Observable::emptyObservable();
         };
 
@@ -195,7 +186,57 @@ class RegisterObservableTest extends FunctionalTestCase
             onCompleted(350)
         ], $results->getMessages());
 
-        $this->assertEquals($messagesSent, 3);
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[70,12345,{},[0]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    function register_reconnect()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+
+            $this->recordWampMessage($msg);
+            return Observable::emptyObservable();
+        };
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(210, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, new WelcomeMessage(12345, new \stdClass())),
+            onNext(270, $registeredMsg),
+            onNext(280, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $sendMessage);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [281, '[70,12345,{},[0]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
     }
 
     /**
@@ -205,24 +246,14 @@ class RegisterObservableTest extends FunctionalTestCase
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
-        $messagesSent  = 0;
 
-        $sendMessage = function (Message $msg) use ($registeredMsg, &$messagesSent) {
-            $messagesSent++;
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
             }
 
-            if ($msg instanceof UnregisteredMessage) {
-                //unregister when completed
-                $this->assertEquals($this->scheduler->getClock(), 350);
-            }
-
-            if ($msg instanceof YieldMessage) {
-                $this->assertEquals($msg->getArguments()[0], "test");
-            }
-
+            $this->recordWampMessage($msg);
             return Observable::emptyObservable();
         };
 
@@ -246,34 +277,32 @@ class RegisterObservableTest extends FunctionalTestCase
             onCompleted(350)
         ], $results->getMessages());
 
-        $this->assertEquals($messagesSent, 6);
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[70,12345,{},[0]]'], //YieldMessage
+            [271, '[70,12345,{},[0]]'], //YieldMessage
+            [281, '[70,12345,{},[0]]'], //YieldMessage
+            [291, '[70,12345,{},[0]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
     }
 
     /**
      * @test
      */
-    function register_with_one_invocation_with_args()
+    function register_with_one_invocation_with_one_arg()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
-        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
-        $messagesSent  = 0;
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1]);
 
-        $sendMessage = function (Message $msg) use ($registeredMsg, &$messagesSent) {
-            $messagesSent++;
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
             }
 
-            if ($msg instanceof UnregisteredMessage) {
-                //unregister when completed
-                $this->assertEquals($this->scheduler->getClock(), 350);
-            }
-
-            if ($msg instanceof YieldMessage) {
-                $this->assertEquals($msg->getArguments()[0], "test");
-            }
-
+            $this->recordWampMessage($msg);
             return Observable::emptyObservable();
         };
 
@@ -294,6 +323,183 @@ class RegisterObservableTest extends FunctionalTestCase
             onCompleted(350)
         ], $results->getMessages());
 
-        $this->assertEquals($messagesSent, 3);
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[70,12345,{},[1]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    function register_with_one_invocation_with_two_arg()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1, 2]);
+
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+
+            $this->recordWampMessage($msg);
+            return Observable::emptyObservable();
+        };
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $sendMessage);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[70,12345,{},[3]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    function register_with_one_invocation_with_two_arg_obs()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1, 2]);
+
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+
+            $this->recordWampMessage($msg);
+            return Observable::emptyObservable();
+        };
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
+            return new RegisterObservable('testing.uri', [$this, 'callableObs'], $messages, $sendMessage);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[70,12345,{},[3]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    function register_with_invocation_error()
+    {
+        $error         = new \Exception("testing");
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1, 2]);
+
+        $sendMessage = function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+
+            $this->recordWampMessage($msg);
+            return Observable::emptyObservable();
+        };
+
+        $callable = function () use ($error) {
+            throw $error;
+        };
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage, $callable) {
+            return new RegisterObservable('testing.uri', $callable, $messages, $sendMessage);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [260, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+    
+    /**
+     * @test
+     */
+    function register_with_registration_error()
+    {
+        $errorMsg = new ErrorMessage(null, 54321, new \stdClass(), "registration.error.uri");
+
+        $sendMessage = function (Message $msg) use ($errorMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $errorMsg->setErrorRequestId($requestId);
+            }
+
+            $this->recordWampMessage($msg);
+            return Observable::emptyObservable();
+        };
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(210, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $errorMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $sendMessage);
+        });
+
+        $this->assertMessages([
+            onError(251, new WampErrorException('registration.error.uri'))
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+        ], $this->getWampMessages());
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace Rx\React\Tests\Functional\Observable;
+namespace Rx\Thruway\Tests\Functional\Observable;
 
 use Rx\Observable;
 use Thruway\Message\CallMessage;

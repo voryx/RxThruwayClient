@@ -16,7 +16,7 @@ foreach ($locations as $location) {
 
     if (file_exists($file)) {
         $loader = require_once $file;
-        $loader->addPsr4('Rx\\React\\Tests\\', __DIR__);
+        $loader->addPsr4('Rx\\Thruway\\Tests\\', __DIR__);
         break;
     }
 }
