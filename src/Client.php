@@ -8,6 +8,7 @@ use Rx\Scheduler\EventLoopScheduler;
 use Rx\Subject\ReplaySubject;
 use Ratchet\Client\WebSocket;
 use React\EventLoop\LoopInterface;
+use Rx\Subject\Subject;
 use Rx\Thruway\Observer\ChallengeObserver;
 use Thruway\Serializer\JsonSerializer;
 use Rx\Extra\Observable\FromEventEmitterObservable;
@@ -30,6 +31,8 @@ class Client
     private $scheduler;
     private $serializer;
     private $disposable;
+    private $onError;
+    private $onOpen;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
@@ -44,6 +47,8 @@ class Client
         $this->session    = new ReplaySubject(1);
         $this->options    = $options;
         $this->disposable = new CompositeDisposable();
+        $this->onError    = new Subject();
+        $this->onOpen     = new Subject();
 
         $this->sendHelloMessage();
         $this->setUpSession();
@@ -143,6 +148,16 @@ class Client
         $this->disposable->add($sub);
     }
 
+    public function onError()
+    {
+        return $this->onError;
+    }
+
+    public function onOpen()
+    {
+        return $this->onOpen;
+    }
+
     public function close()
     {
         //@todo do other close stuff.  should probably emit on a normal closing subject
@@ -157,6 +172,9 @@ class Client
         $sub = $this->messages
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
+            })
+            ->doOnNext(function (WelcomeMessage $msg) {
+                $this->onOpen->onNext($msg);
             })
             ->subscribe($this->session);
 
@@ -206,6 +224,7 @@ class Client
 
         return $attempts
             ->flatMap(function ($ex) use ($maxRetryDelay, $retryDelayGrowth, &$exponent, $initialRetryDelay) {
+                $this->onError->onNext($ex);
                 $delay = min($maxRetryDelay, pow($retryDelayGrowth, ++$exponent) + $initialRetryDelay);
                 return Observable::timer((int)$delay, $this->scheduler);
             })
