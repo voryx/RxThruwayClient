@@ -4,6 +4,7 @@ namespace Rx\Thruway;
 
 use Rx\Disposable\CompositeDisposable;
 use Rx\Observable;
+use Rx\Scheduler\EventLoopScheduler;
 use Rx\Subject\ReplaySubject;
 use Ratchet\Client\WebSocket;
 use React\EventLoop\LoopInterface;
@@ -26,25 +27,31 @@ class Client
     private $options;
     private $messages;
     private $webSocket;
+    private $scheduler;
     private $serializer;
     private $disposable;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
+
         $this->url        = $url;
         $this->loop       = $loop ?? \EventLoop\getLoop();
+        $this->scheduler  = new EventLoopScheduler($this->loop);
         $this->realm      = $realm;
-        $this->webSocket  = (new WebSocketObservable($url, $this->loop))->repeat()->retry()->shareReplay(1);
+        $this->webSocket  = (new WebSocketObservable($url, $this->loop))->repeat()->retryWhen([$this, 'reconnect'])->shareReplay(1);
         $this->serializer = new JsonSerializer();
         $this->messages   = $this->messagesFromWebSocket($this->webSocket)->share();
         $this->session    = new ReplaySubject(1);
         $this->options    = $options;
         $this->disposable = new CompositeDisposable();
 
+        $this->sendHelloMessage();
         $this->setUpSession();
     }
 
     /**
+     * Send message after the session is setup
+     *
      * @param Message $msg
      * @return Observable
      */
@@ -79,11 +86,13 @@ class Client
      * @param string $uri
      * @param callable $callback
      * @param array $options
-     * @return RegisterObservable
+     * @return Observable
      */
-    public function register(string $uri, callable $callback, array $options = []) :RegisterObservable
+    public function register(string $uri, callable $callback, array $options = []) :Observable
     {
-        return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options);
+        return $this->session->flatMap(function () use ($uri, $callback, $options) {
+            return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options);
+        });
     }
 
     /**
@@ -94,7 +103,9 @@ class Client
      */
     public function registerExtended(string $uri, callable $callback, array $options = []) :RegisterObservable
     {
-        return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options, true);
+        return $this->session->flatMap(function () use ($uri, $callback, $options) {
+            return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options, true);
+        });
     }
 
     /**
@@ -104,7 +115,9 @@ class Client
      */
     public function topic(string $uri, array $options = []) :TopicObservable
     {
-        return new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']);
+        return $this->session->flatMap(function () use ($uri, $options) {
+            return new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']);
+        });
     }
 
     public function onChallenge(callable $challengeCallback)
@@ -141,19 +154,29 @@ class Client
      */
     private function setUpSession()
     {
+        $sub = $this->messages
+            ->filter(function (Message $msg) {
+                return $msg instanceof WelcomeMessage;
+            })
+            ->subscribe($this->session);
+
+        $this->disposable->add($sub);
+    }
+
+    /**
+     * Send a HelloMessage on each new WebSocket connection
+     */
+    private function sendHelloMessage()
+    {
         $helloMsg = new HelloMessage($this->realm, (object)$this->options);
 
         $sub = $this->webSocket
             ->map(function (WebSocket $ws) use ($helloMsg) {
                 return $ws->send($this->serializer->serialize($helloMsg));
             })
-            ->flatMap(function () {
-                return $this->messages;
-            })
-            ->filter(function (Message $msg) {
-                return $msg instanceof WelcomeMessage;
-            })
-            ->subscribe($this->session);
+            ->subscribeCallback(
+            //@todo log stuff
+            );
 
         $this->disposable->add($sub);
     }
@@ -171,5 +194,21 @@ class Client
             ->map(function ($msg) {
                 return $this->serializer->deserialize($msg[0]);
             });
+    }
+
+    public function reconnect(Observable $attempts)
+    {
+        $maxRetryDelay     = 300000;
+        $initialRetryDelay = 1500;
+        $retryDelayGrowth  = 1.5;
+        $maxRetries        = 150;
+        $exponent          = 0;
+
+        return $attempts
+            ->flatMap(function ($ex) use ($maxRetryDelay, $retryDelayGrowth, &$exponent, $initialRetryDelay) {
+                $delay = min($maxRetryDelay, pow($retryDelayGrowth, ++$exponent) + $initialRetryDelay);
+                return Observable::timer((int)$delay, $this->scheduler);
+            })
+            ->take($maxRetries);
     }
 }
