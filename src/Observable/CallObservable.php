@@ -20,8 +20,9 @@ class CallObservable extends Observable
     private $options;
     private $messages;
     private $sendMessage;
+    private $timeout;
 
-    function __construct(string $uri, Observable $messages, callable $sendMessage, array $args = null, array $argskw = null, array $options = null)
+    function __construct(string $uri, Observable $messages, callable $sendMessage, array $args = null, array $argskw = null, array $options = null, int $timeout = 300000)
     {
         $this->uri         = $uri;
         $this->args        = $args;
@@ -29,6 +30,7 @@ class CallObservable extends Observable
         $this->options     = (object)$options;
         $this->messages    = $messages;
         $this->sendMessage = $sendMessage;
+        $this->timeout     = $timeout;
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -69,6 +71,7 @@ class CallObservable extends Observable
             ->map(function (ResultMessage $msg) {
                 return [$msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails()];
             })
+            ->timeout($this->timeout)
             ->subscribe($observer, $scheduler);
     }
 }

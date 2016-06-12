@@ -2,6 +2,7 @@
 
 namespace Rx\Thruway\Observable;
 
+use Rx\Disposable\EmptyDisposable;
 use Rx\Observable;
 use Rx\React\Promise;
 use Rx\ObserverInterface;
@@ -26,26 +27,33 @@ class WebSocketObservable extends Observable
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
     {
-        $connector  = new Connector($this->loop);
-        $disposable = new CompositeDisposable();
+        try {
 
-        $onNext = function (WebSocket $ws) use ($observer, $disposable) {
-            $ws->on("error", [$observer, "onError"]);
-            $ws->on("close", [$observer, "onCompleted"]);
-            $observer->onNext($ws);
+            $connector  = new Connector($this->loop);
+            $disposable = new CompositeDisposable();
 
-            $disposable->add(new CallbackDisposable(function () use ($ws) {
-                $ws->close();
-            }));
-        };
+            $onNext = function (WebSocket $ws) use ($observer, $disposable) {
+                $ws->on("error", [$observer, "onError"]);
+                $ws->on("close", [$observer, "onCompleted"]);
+                $observer->onNext($ws);
 
-        $callbackObserver = new CallbackObserver($onNext, [$observer, 'onError']);
-        
-        $subscription = Promise::toObservable($connector($this->url, ['wamp.2.json']))
-            ->subscribe($callbackObserver, $scheduler);
+                $disposable->add(new CallbackDisposable(function () use ($ws) {
+                    $ws->close();
+                }));
+            };
 
-        $disposable->add($subscription);
+            $callbackObserver = new CallbackObserver($onNext, [$observer, 'onError']);
 
-        return $disposable;
+            $subscription = Promise::toObservable($connector($this->url, ['wamp.2.json']))
+                ->subscribe($callbackObserver, $scheduler);
+
+            $disposable->add($subscription);
+
+            return $disposable;
+
+        } catch (\Exception $e) {
+            $observer->onError($e);
+            return new EmptyDisposable();
+        }
     }
 }

@@ -464,4 +464,40 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(250)
         ], $results->getMessages());
     }
+
+
+    /**
+     * @test
+     */
+    function call_one_timeout()
+    {
+
+        $args    = ["testing"];
+        $argskw  = (object)["foo" => "bar"];
+        $details = (object)["one" => "two"];
+
+        $resultMessage = new ResultMessage(null, $details, $args, $argskw);
+
+        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+            $requestId = $msg->getRequestId();
+            $resultMessage->setRequestId($requestId);
+            return Observable::emptyObservable();
+        };
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $resultMessage),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
+            return new CallObservable('testing.uri', $messages, $sendMessage, null, null, null, 10);
+        });
+
+        $this->assertMessages([
+            onError(210, new \Exception())
+        ], $results->getMessages());
+
+    }
 }
