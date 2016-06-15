@@ -71,7 +71,6 @@ class CallObservable extends Observable
             ->map(function (ResultMessage $msg) {
                 return [$msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails()];
             })
-            ->timeout($this->timeout)
             ->subscribe($observer, $scheduler);
     }
 }
