@@ -54,6 +54,6 @@ class YieldObserver extends AbstractObserver
         //@todo add logger observer
         );
 
-        $this->disposable->add($sub);
+//        $this->disposable->add($sub);
     }
 }
