@@ -118,7 +118,7 @@ class Client
      * @param array $options
      * @return TopicObservable
      */
-    public function topic(string $uri, array $options = []) :TopicObservable
+    public function topic(string $uri, array $options = []) :Observable
     {
         return $this->session->flatMap(function () use ($uri, $options) {
             return new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']);
