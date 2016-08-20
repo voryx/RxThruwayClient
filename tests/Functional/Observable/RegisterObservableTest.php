@@ -71,6 +71,10 @@ class RegisterObservableTest extends FunctionalTestCase
         $this->assertMessages([
             onCompleted(235)
         ], $results->getMessages());
+
+        $this->assertSubscriptions([
+            subscribe(200, 235)
+        ], $messages->getSubscriptions());
     }
 
     /**

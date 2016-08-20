@@ -28,7 +28,7 @@
     }
   },
   "require": {
-    "reactivex/rxphp": "^1.0.0",
+    "reactivex/rxphp": "^1.3.0",
     "voryx/thruway-common": "^1.0.0",
     "php": "^7.0",
     "ratchet/pawl": "^0.2.2",

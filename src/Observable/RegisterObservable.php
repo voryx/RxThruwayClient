@@ -33,7 +33,7 @@ class RegisterObservable extends Observable
         $this->uri         = $uri;
         $this->options     = $options;
         $this->callback    = $callback;
-        $this->messages    = $messages;
+        $this->messages    = $messages->share();
         $this->sendMessage = $sendMessage;
         $this->extended    = $extended;
     }

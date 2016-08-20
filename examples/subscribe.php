@@ -1,6 +1,5 @@
 <?php
 
-
 use Rx\Observer\CallbackObserver;
 use Rx\Thruway\Client;
 

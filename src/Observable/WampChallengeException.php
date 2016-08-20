@@ -23,6 +23,7 @@ class WampChallengeException extends WampErrorException
      */
     public function getErrorMessage()
     {
+        //@todo This should be an abort message not an error
         return ErrorMessage::createErrorMessageFromMessage($this->challengeMessage, $this->getErrorUri());
     }
 }

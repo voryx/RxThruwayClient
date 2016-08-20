@@ -15,24 +15,15 @@ use Rx\Extra\Observable\FromEventEmitterObservable;
 use Rx\Thruway\Observable\{
     CallObservable, TopicObservable, RegisterObservable, WebSocketObservable, WampChallengeException
 };
+use Rx\Thruway\Observer\PublishObserver;
+use Rx\Thruway\Subject\TopicSubject;
 use Thruway\Message\{
     AuthenticateMessage, ChallengeMessage, Message, HelloMessage, WelcomeMessage
 };
 
 class Client
 {
-    private $url;
-    private $loop;
-    private $realm;
-    private $session;
-    private $options;
-    private $messages;
-    private $webSocket;
-    private $scheduler;
-    private $serializer;
-    private $disposable;
-    private $onError;
-    private $onOpen;
+    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $serializer, $disposable, $onError, $onOpen;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
@@ -63,9 +54,7 @@ class Client
     public function sendMessage(Message $msg) :Observable
     {
         return $this->session
-            ->flatMap(function () {
-                return $this->webSocket;
-            })
+            ->flatMapTo($this->webSocket)
             ->take(1)
             ->doOnNext(function (WebSocket $webSocket) use ($msg) {
                 $webSocket->send($this->serializer->serialize($msg));
@@ -95,34 +84,31 @@ class Client
      */
     public function register(string $uri, callable $callback, array $options = []) :Observable
     {
-        return $this->session->flatMap(function () use ($uri, $callback, $options) {
-            return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options);
-        });
+        return $this->session->flatMapTo(new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options));
     }
 
     /**
      * @param string $uri
      * @param callable $callback
      * @param array $options
-     * @return RegisterObservable
+     * @return Observable
      */
-    public function registerExtended(string $uri, callable $callback, array $options = []) :RegisterObservable
+    public function registerExtended(string $uri, callable $callback, array $options = []) :Observable
     {
-        return $this->session->flatMap(function () use ($uri, $callback, $options) {
-            return new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options, true);
-        });
+        return $this->session->flatMapTo(new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options, true));
     }
 
     /**
      * @param string $uri
      * @param array $options
-     * @return TopicObservable
+     * @return TopicSubject
      */
-    public function topic(string $uri, array $options = []) :Observable
+    public function topic(string $uri, array $options = []) :TopicSubject
     {
-        return $this->session->flatMap(function () use ($uri, $options) {
-            return new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']);
-        });
+        return new TopicSubject(
+            new PublishObserver($uri, $options, $this),
+            $this->session->flatMapTo(new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']))
+        );
     }
 
     public function onChallenge(callable $challengeCallback)
@@ -186,15 +172,11 @@ class Client
      */
     private function sendHelloMessage()
     {
-        $helloMsg = new HelloMessage($this->realm, (object)$this->options);
-
-        $sub = $this->webSocket
-            ->map(function (WebSocket $ws) use ($helloMsg) {
-                return $ws->send($this->serializer->serialize($helloMsg));
-            })
-            ->subscribeCallback(
-            //@todo log stuff
-            );
+        $sub = $this->webSocket->subscribeCallback(
+            function (WebSocket $ws) {
+                $helloMsg = new HelloMessage($this->realm, (object)$this->options);
+                $ws->send($this->serializer->serialize($helloMsg));
+            });
 
         $this->disposable->add($sub);
     }
