@@ -21,7 +21,6 @@ $client->registerExtended('com.myapp.example', function ($args, $argskw, $detail
     }
 );
 
-
 $client->call('com.myapp.example', [123], ["foo" => "bar"])
     ->subscribe(new CallbackObserver(
             function ($res) {

@@ -4,31 +4,21 @@ namespace Rx\Thruway\Observable;
 
 use Rx\Observable;
 use Rx\ObserverInterface;
+use Rx\Subject\Subject;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
 use Rx\Observer\CallbackObserver;
 use Rx\Disposable\CallbackDisposable;
-use Rx\Thruway\Observer\YieldObserver;
 use Rx\Disposable\CompositeDisposable;
 use Thruway\Message\{
-    Message, RegisteredMessage, RegisterMessage, UnregisteredMessage, ErrorMessage, InvocationMessage, UnregisterMessage
+    Message, RegisteredMessage, RegisterMessage, UnregisteredMessage, ErrorMessage, InvocationMessage, UnregisterMessage, YieldMessage
 };
 
-/**
- * Class RegisterObservable
- * @package Thruway\Rx
- */
 class RegisterObservable extends Observable
 {
+    private $uri, $options, $messages, $sendMessage, $callback, $extended, $logSubject;
 
-    private $uri;
-    private $options;
-    private $messages;
-    private $sendMessage;
-    private $callback;
-    private $extended;
-
-    function __construct(string $uri, callable $callback, Observable $messages, callable $sendMessage, array $options = [], bool $extended = false)
+    function __construct(string $uri, callable $callback, Observable $messages, callable $sendMessage, array $options = [], bool $extended = false, Subject $logSubject = null)
     {
         $this->uri         = $uri;
         $this->options     = $options;
@@ -36,6 +26,7 @@ class RegisterObservable extends Observable
         $this->messages    = $messages->share();
         $this->sendMessage = $sendMessage;
         $this->extended    = $extended;
+        $this->logSubject  = $logSubject ?: new Subject();
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -119,7 +110,20 @@ class RegisterObservable extends Observable
                 });
             })
             ->takeUntil($unregisteredMsg)
-            ->subscribe(new YieldObserver($this->sendMessage), $scheduler);
+            ->flatMap(function ($args) {
+                /* @var $invocationMsg InvocationMessage */
+                list($value, $invocationMsg) = $args;
+
+                return call_user_func($this->sendMessage, new YieldMessage($invocationMsg->getRequestId(), null, [$value]));
+            })
+            ->catchError(function (\Exception $error) {
+                if ($error instanceof WampInvocationException) {
+                    return call_user_func($this->sendMessage, $error->getErrorMessage())
+                        ->flatMapTo(Observable::error($error));
+                }
+                return Observable::error($error);
+            })
+            ->subscribe($this->logSubject, $scheduler);
 
         $disposable->add($invocationSubscription);
         $disposable->add($registerSubscription);
