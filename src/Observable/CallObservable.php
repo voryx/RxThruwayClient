@@ -13,14 +13,7 @@ use Thruway\Message\{
 
 class CallObservable extends Observable
 {
-
-    private $uri;
-    private $args;
-    private $argskw;
-    private $options;
-    private $messages;
-    private $sendMessage;
-    private $timeout;
+    private $uri, $args, $argskw, $options, $messages, $sendMessage, $timeout;
 
     function __construct(string $uri, Observable $messages, callable $sendMessage, array $args = null, array $argskw = null, array $options = null, int $timeout = 300000)
     {

@@ -15,9 +15,7 @@ use Rx\Disposable\CompositeDisposable;
 
 class WebSocketObservable extends Observable
 {
-
-    private $url;
-    private $loop;
+    private $url, $loop;
 
     function __construct(string $url = "ws://127.0.0.1:9090/", LoopInterface $loop)
     {
@@ -28,13 +26,18 @@ class WebSocketObservable extends Observable
     public function subscribe(ObserverInterface $observer, $scheduler = null)
     {
         try {
-
             $connector  = new Connector($this->loop);
             $disposable = new CompositeDisposable();
 
             $onNext = function (WebSocket $ws) use ($observer, $disposable) {
                 $ws->on("error", [$observer, "onError"]);
-                $ws->on("close", [$observer, "onCompleted"]);
+                $ws->on("close", function ($reason) use ($observer) {
+                    if ($reason !== 1000) {
+                        $observer->onError(new \Exception($reason));
+                        return;
+                    }
+                    $observer->onCompleted();
+                });
                 $observer->onNext($ws);
 
                 $disposable->add(new CallbackDisposable(function () use ($ws) {

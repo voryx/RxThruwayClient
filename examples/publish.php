@@ -7,6 +7,6 @@ require __DIR__ . '/../vendor/autoload.php';
 
 $client = new Client('ws://127.0.0.1:9090', "realm1");
 
-$source = Observable::range(1, 30);
+$source = Observable::interval(1000);
 
-$client->publish('com.myapp.hello', $source);
+$x = $client->publish('com.myapp.hello', $source);

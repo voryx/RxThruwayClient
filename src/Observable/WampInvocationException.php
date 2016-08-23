@@ -8,7 +8,6 @@ use Thruway\WampErrorException;
 
 class WampInvocationException extends WampErrorException
 {
-
     private $invocationMessage;
 
     public function __construct(InvocationMessage $msg, $errorUri = 'thruway.error.invocation_exception', $arguments = null, $argumentsKw = null, $details = null)

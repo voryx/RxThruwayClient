@@ -5,6 +5,7 @@ namespace Rx\Thruway;
 use Rx\Disposable\CompositeDisposable;
 use Rx\DisposableInterface;
 use Rx\Observable;
+use Rx\Observer\CallbackObserver;
 use Rx\Scheduler\EventLoopScheduler;
 use Ratchet\Client\WebSocket;
 use React\EventLoop\LoopInterface;
@@ -91,12 +92,9 @@ class Client
      */
     public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true) :Observable
     {
-        $confirmation = new Subject();
-        $this->session
+        return $this->session
             ->flatMapTo(new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options, $extended))
-            ->subscribe($confirmation);
-
-        return $confirmation;
+            ->subscribeOn($this->scheduler);
     }
 
     /**
@@ -118,13 +116,19 @@ class Client
     public function publish(string $uri, $obs, array $options = []) : DisposableInterface
     {
         $obs = $obs instanceof Observable ? $obs : Observable::just($obs);
+        
+        $completed = new Subject();
 
-        $sub = $obs
+        $sub = $this->session
+            ->takeUntil($completed)
+            ->flatMapTo($obs->doOnCompleted(function () use ($completed) {
+                $completed->onNext(0);
+            }))
             ->map(function ($value) use ($uri, $options) {
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
             ->flatMap([$this, 'sendMessage'])
-            ->subscribeCallback();
+            ->subscribe(new CallbackObserver(), $this->scheduler);
 
         $this->disposable->add($sub);
 
@@ -149,7 +153,7 @@ class Client
             ->map(function ($signature) {
                 return new AuthenticateMessage($signature);
             })
-            ->subscribe(new ChallengeObserver($this->webSocket, $this->serializer));
+            ->subscribe(new ChallengeObserver($this->webSocket, $this->serializer), $this->scheduler);
 
         $this->disposable->add($sub);
     }
@@ -206,6 +210,7 @@ class Client
                 return (new FromEventEmitterObservable($webSocket, "message", "error", "close"));
             })
             ->map(function ($msg) {
+                echo $this->serializer->deserialize($msg[0]), PHP_EOL;
                 return $this->serializer->deserialize($msg[0]);
             });
     }

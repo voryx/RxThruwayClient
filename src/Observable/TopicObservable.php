@@ -3,6 +3,7 @@
 namespace Rx\Thruway\Observable;
 
 use Rx\Observable;
+use Rx\Observer\CallbackObserver;
 use Thruway\Common\Utils;
 use Rx\ObserverInterface;
 use Thruway\WampErrorException;
@@ -14,11 +15,7 @@ use Thruway\Message\{
 
 class TopicObservable extends Observable
 {
-
-    private $uri;
-    private $options;
-    private $messages;
-    private $sendMessage;
+    private $uri, $options, $messages, $sendMessage;
 
     function __construct(string $uri, array $options, Observable $messages, callable $sendMessage)
     {
@@ -68,12 +65,12 @@ class TopicObservable extends Observable
 
         $disposable->add($sub);
 
-        $disposable->add(new CallbackDisposable(function () use (&$subscriptionId) {
+        $disposable->add(new CallbackDisposable(function () use (&$subscriptionId, $scheduler) {
             if (!$subscriptionId) {
                 return;
             }
             $unsubscribeMsg = new UnsubscribeMessage(Utils::getUniqueId(), $subscriptionId);
-            call_user_func($this->sendMessage, $unsubscribeMsg)->take(1)->subscribeCallback();
+            call_user_func($this->sendMessage, $unsubscribeMsg)->take(1)->subscribe(new CallbackObserver(), $scheduler);
         }));
 
         return $disposable;
