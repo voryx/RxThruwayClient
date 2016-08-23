@@ -210,7 +210,6 @@ class Client
                 return (new FromEventEmitterObservable($webSocket, "message", "error", "close"));
             })
             ->map(function ($msg) {
-                echo $this->serializer->deserialize($msg[0]), PHP_EOL;
                 return $this->serializer->deserialize($msg[0]);
             });
     }
