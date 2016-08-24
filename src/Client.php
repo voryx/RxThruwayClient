@@ -9,6 +9,7 @@ use Rx\Observer\CallbackObserver;
 use Rx\Scheduler\EventLoopScheduler;
 use Ratchet\Client\WebSocket;
 use React\EventLoop\LoopInterface;
+use Rx\Subject\ReplaySubject;
 use Rx\Subject\Subject;
 use Rx\Thruway\Observer\ChallengeObserver;
 use Thruway\Common\Utils;
@@ -28,17 +29,19 @@ class Client
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
         $this->url        = $url;
+        $this->realm      = $realm;
+        $this->options    = $options;
         $this->loop       = $loop ?? \EventLoop\getLoop();
         $this->scheduler  = new EventLoopScheduler($this->loop);
-        $this->realm      = $realm;
         $this->webSocket  = (new WebSocketObservable($url, $this->loop))->retryWhen([$this, 'reconnect'])->shareReplay(1);
         $this->serializer = new JsonSerializer();
         $this->messages   = $this->messagesFromWebSocket($this->webSocket)->share();
-        $this->session    = $this->sendHelloMessage()->concatMapTo($this->getWelcomeMessage())->shareReplay(1);
-        $this->options    = $options;
+        $this->session    = new ReplaySubject(1);
         $this->disposable = new CompositeDisposable();
         $this->onError    = new Subject();
         $this->onOpen     = new Subject();
+
+        $this->sendHelloMessage()->concatMapTo($this->getWelcomeMessage())->subscribe($this->session);
     }
 
     /**
@@ -116,7 +119,7 @@ class Client
     public function publish(string $uri, $obs, array $options = []) : DisposableInterface
     {
         $obs = $obs instanceof Observable ? $obs : Observable::just($obs);
-        
+
         $completed = new Subject();
 
         $sub = $this->session
@@ -210,6 +213,7 @@ class Client
                 return (new FromEventEmitterObservable($webSocket, "message", "error", "close"));
             })
             ->map(function ($msg) {
+                echo $this->serializer->deserialize($msg[0]), PHP_EOL;
                 return $this->serializer->deserialize($msg[0]);
             });
     }
