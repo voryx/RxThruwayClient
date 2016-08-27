@@ -32,7 +32,6 @@
     "voryx/thruway-common": "^1.0.0",
     "php": "^7.0",
     "ratchet/pawl": "^0.2.2",
-    "rx/operator-extras": "^0.3.0",
     "voryx/event-loop": "^0.2.0"
   },
   "repositories": [

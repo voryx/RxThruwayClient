@@ -5,18 +5,13 @@ namespace Rx\Thruway;
 use Rx\Disposable\CompositeDisposable;
 use Rx\DisposableInterface;
 use Rx\Observable;
-use Rx\Observer\CallbackObserver;
 use Rx\Scheduler\EventLoopScheduler;
-use Ratchet\Client\WebSocket;
 use React\EventLoop\LoopInterface;
-use Rx\Subject\ReplaySubject;
 use Rx\Subject\Subject;
-use Rx\Thruway\Observer\ChallengeObserver;
+use Rx\Thruway\Subject\WebSocketSubject;
 use Thruway\Common\Utils;
-use Thruway\Serializer\JsonSerializer;
-use Rx\Extra\Observable\FromEventEmitterObservable;
 use Rx\Thruway\Observable\{
-    CallObservable, TopicObservable, RegisterObservable, WebSocketObservable, WampChallengeException
+    CallObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
     AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
@@ -24,43 +19,35 @@ use Thruway\Message\{
 
 class Client
 {
-    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $serializer, $disposable, $onError, $onOpen;
+    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
-        $this->url        = $url;
-        $this->realm      = $realm;
-        $this->options    = $options;
-        $this->loop       = $loop ?? \EventLoop\getLoop();
-        $this->scheduler  = new EventLoopScheduler($this->loop);
-        $this->webSocket  = (new WebSocketObservable($url, $this->loop))->retryWhen([$this, 'reconnect'])->shareReplay(1);
-        $this->serializer = new JsonSerializer();
-        $this->messages   = $this->messagesFromWebSocket($this->webSocket)->share();
-        $this->session    = new ReplaySubject(1);
-        $this->disposable = new CompositeDisposable();
-        $this->onError    = new Subject();
-        $this->onOpen     = new Subject();
+        $this->url       = $url;
+        $this->realm     = $realm;
+        $this->options   = $options;
+        $this->loop      = $loop ?? \EventLoop\getLoop();
+        $this->scheduler = new EventLoopScheduler($this->loop);
+        $open            = new Subject();
+        $close           = new Subject();
 
-        $this->sendHelloMessage()->concatMapTo($this->getWelcomeMessage())->subscribe($this->session);
-    }
+        $this->webSocket = new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
 
-    /**
-     * Send message after the session is setup
-     *
-     * @param Message $msg
-     * @return Observable
-     */
-    public function sendMessage(Message $msg) :Observable
-    {
-        return $this->session
-            ->flatMapTo($this->webSocket)
-            ->take(1)
-            ->doOnNext(function (WebSocket $webSocket) use ($msg) {
-                $webSocket->send($this->serializer->serialize($msg));
+        $this->messages = $this->webSocket
+            ->map(function ($msg) {
+                echo $msg, PHP_EOL;
+                return $msg;
             })
-            ->flatMap(function () {
-                return Observable::emptyObservable();
-            });
+            ->retryWhen([$this, 'reconnect'])
+            ->share();
+
+        $this->disposable = new CompositeDisposable();
+
+        $open->map(function () {
+            return $helloMsg = new HelloMessage($this->realm, (object)$this->options);
+        })->subscribe($this->webSocket, $this->scheduler);
+
+        $this->session = $this->getWelcomeMessage()->shareReplay(1);
     }
 
     /**
@@ -68,11 +55,13 @@ class Client
      * @param array $args
      * @param array $argskw
      * @param array $options
-     * @return CallObservable
+     * @return Observable
      */
-    public function call(string $uri, array $args = [], array $argskw = [], array $options = null) :CallObservable
+    public function call(string $uri, array $args = [], array $argskw = [], array $options = null) :Observable
     {
-        return new CallObservable($uri, $this->messages, [$this, 'sendMessage'], $args, $argskw, $options);
+        return $this->session
+            ->take(1)
+            ->flatMapTo(new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options));
     }
 
     /**
@@ -96,7 +85,7 @@ class Client
     public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true) :Observable
     {
         return $this->session
-            ->flatMapTo(new RegisterObservable($uri, $callback, $this->messages, [$this, 'sendMessage'], $options, $extended))
+            ->flatMapTo(new RegisterObservable($uri, $callback, $this->messages, $this->webSocket, $options, $extended))
             ->subscribeOn($this->scheduler);
     }
 
@@ -107,7 +96,8 @@ class Client
      */
     public function topic(string $uri, array $options = []) :Observable
     {
-        return $this->session->flatMapTo(new TopicObservable($uri, $options, $this->messages, [$this, 'sendMessage']));
+        return $this->session->flatMapTo(new TopicObservable($uri, $options, $this->messages, $this->webSocket))
+            ->subscribeOn($this->scheduler);
     }
 
     /**
@@ -124,14 +114,14 @@ class Client
 
         $sub = $this->session
             ->takeUntil($completed)
-            ->flatMapTo($obs->doOnCompleted(function () use ($completed) {
+            ->mapTo($obs->doOnCompleted(function () use ($completed) {
                 $completed->onNext(0);
             }))
+            ->concatAll()//this should be switchFirst() so it can resume if the websocket connection resets
             ->map(function ($value) use ($uri, $options) {
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
-            ->flatMap([$this, 'sendMessage'])
-            ->subscribe(new CallbackObserver(), $this->scheduler);
+            ->subscribe($this->webSocket, $this->scheduler);
 
         $this->disposable->add($sub);
 
@@ -156,19 +146,15 @@ class Client
             ->map(function ($signature) {
                 return new AuthenticateMessage($signature);
             })
-            ->subscribe(new ChallengeObserver($this->webSocket, $this->serializer), $this->scheduler);
+            ->catchError(function (\Exception $ex) {
+                if ($ex instanceof WampChallengeException) {
+                    return Observable::just($ex->getErrorMessage());
+                }
+                return Observable::error($ex);
+            })
+            ->subscribe($this->webSocket, $this->scheduler);
 
         $this->disposable->add($sub);
-    }
-
-    public function onError()
-    {
-        return $this->onError;
-    }
-
-    public function onOpen()
-    {
-        return $this->onOpen;
     }
 
     public function close()
@@ -186,35 +172,8 @@ class Client
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
-            ->doOnNext(function (WelcomeMessage $msg) {
-                $this->onOpen->onNext($msg);
-            });
-    }
-
-    /**
-     * Send a HelloMessage on each new WebSocket connection
-     */
-    private function sendHelloMessage()
-    {
-        return $this->webSocket->doOnNext(function (WebSocket $ws) {
-            $helloMsg = new HelloMessage($this->realm, (object)$this->options);
-            $ws->send($this->serializer->serialize($helloMsg));
-        });
-    }
-
-    /**
-     * @param Observable $webSocket
-     * @return Observable
-     */
-    private function messagesFromWebSocket(Observable $webSocket) :Observable
-    {
-        return $webSocket
-            ->flatMap(function (WebSocket $webSocket) {
-                return (new FromEventEmitterObservable($webSocket, "message", "error", "close"));
-            })
-            ->map(function ($msg) {
-                echo $this->serializer->deserialize($msg[0]), PHP_EOL;
-                return $this->serializer->deserialize($msg[0]);
+            ->doOnNext(function () {
+                echo "got welcome", PHP_EOL;
             });
     }
 
@@ -228,7 +187,6 @@ class Client
 
         return $attempts
             ->flatMap(function ($ex) use ($maxRetryDelay, $retryDelayGrowth, &$exponent, $initialRetryDelay) {
-                $this->onError->onNext($ex);
                 $delay = min($maxRetryDelay, pow($retryDelayGrowth, ++$exponent) + $initialRetryDelay);
                 return Observable::timer((int)$delay, $this->scheduler);
             })

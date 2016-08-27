@@ -5,6 +5,7 @@ namespace Rx\Thruway\Observable;
 use Rx\Observable;
 use Rx\ObserverInterface;
 use Rx\Subject\Subject;
+use Rx\Thruway\Subject\WebSocketSubject;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
 use Rx\Observer\CallbackObserver;
@@ -16,17 +17,17 @@ use Thruway\Message\{
 
 class RegisterObservable extends Observable
 {
-    private $uri, $options, $messages, $sendMessage, $callback, $extended, $logSubject;
+    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject;
 
-    function __construct(string $uri, callable $callback, Observable $messages, callable $sendMessage, array $options = [], bool $extended = false, Subject $logSubject = null)
+    function __construct(string $uri, callable $callback, Observable $messages, WebSocketSubject $ws, array $options = [], bool $extended = false, Subject $logSubject = null)
     {
-        $this->uri         = $uri;
-        $this->options     = $options;
-        $this->callback    = $callback;
-        $this->messages    = $messages->share();
-        $this->sendMessage = $sendMessage;
-        $this->extended    = $extended;
-        $this->logSubject  = $logSubject ?: new Subject();
+        $this->uri        = $uri;
+        $this->options    = $options;
+        $this->callback   = $callback;
+        $this->messages   = $messages->share();
+        $this->ws         = $ws;
+        $this->extended   = $extended;
+        $this->logSubject = $logSubject ?: new Subject();
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -74,11 +75,12 @@ class RegisterObservable extends Observable
                 return;
             }
             $unregisterMsg = new UnregisterMessage(Utils::getUniqueId(), $registrationId);
-            call_user_func($this->sendMessage, $unregisterMsg)->subscribeCallback();
+            $this->ws->onNext($unregisterMsg);
         };
 
-        $registerSubscription = call_user_func($this->sendMessage, $registerMsg)
-            ->merge($registeredMsg)
+        $this->ws->onNext($registerMsg);
+
+        $registerSubscription = $registeredMsg
             ->merge($unregisteredMsg)
             ->merge($error)
             ->subscribe(new CallbackObserver(
@@ -110,20 +112,19 @@ class RegisterObservable extends Observable
                 });
             })
             ->takeUntil($unregisteredMsg)
-            ->flatMap(function ($args) {
+            ->map(function ($args) {
                 /* @var $invocationMsg InvocationMessage */
                 list($value, $invocationMsg) = $args;
 
-                return call_user_func($this->sendMessage, new YieldMessage($invocationMsg->getRequestId(), null, [$value]));
+                return new YieldMessage($invocationMsg->getRequestId(), null, [$value]);
             })
             ->catchError(function (\Exception $error) {
                 if ($error instanceof WampInvocationException) {
-                    return call_user_func($this->sendMessage, $error->getErrorMessage())
-                        ->flatMapTo(Observable::error($error));
+                    return Observable::just($error->getErrorMessage());
                 }
                 return Observable::error($error);
             })
-            ->subscribe($this->logSubject, $scheduler);
+            ->subscribe($this->ws, $scheduler);
 
         $disposable->add($invocationSubscription);
         $disposable->add($registerSubscription);

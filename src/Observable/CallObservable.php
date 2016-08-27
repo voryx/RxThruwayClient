@@ -5,6 +5,7 @@ namespace Rx\Thruway\Observable;
 use Rx\Disposable\EmptyDisposable;
 use Rx\Observable;
 use Rx\ObserverInterface;
+use Rx\Subject\Subject;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
 use Thruway\Message\{
@@ -13,17 +14,17 @@ use Thruway\Message\{
 
 class CallObservable extends Observable
 {
-    private $uri, $args, $argskw, $options, $messages, $sendMessage, $timeout;
+    private $uri, $args, $argskw, $options, $messages, $webSocket, $timeout;
 
-    function __construct(string $uri, Observable $messages, callable $sendMessage, array $args = null, array $argskw = null, array $options = null, int $timeout = 300000)
+    function __construct(string $uri, Observable $messages, Subject $webSocket, array $args = null, array $argskw = null, array $options = null, int $timeout = 300000)
     {
-        $this->uri         = $uri;
-        $this->args        = $args;
-        $this->argskw      = $argskw;
-        $this->options     = (object)$options;
-        $this->messages    = $messages;
-        $this->sendMessage = $sendMessage;
-        $this->timeout     = $timeout;
+        $this->uri       = $uri;
+        $this->args      = $args;
+        $this->argskw    = $argskw;
+        $this->options   = (object)$options;
+        $this->messages  = $messages;
+        $this->webSocket = $webSocket;
+        $this->timeout   = $timeout;
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -52,14 +53,14 @@ class CallObservable extends Observable
             ->take(1);
 
         try {
-            $sm = call_user_func($this->sendMessage, $callMsg);
+            $this->webSocket->onNext($callMsg);
         } catch (\Exception $e) {
+            $observer->onError($e);
             $observer->onError($e);
             return new EmptyDisposable();
         }
 
-        return $sm
-            ->merge($error)
+        return $error
             ->merge($resultMsg)
             ->map(function (ResultMessage $msg) {
                 return [$msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails()];

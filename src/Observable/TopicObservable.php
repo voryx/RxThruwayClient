@@ -3,7 +3,7 @@
 namespace Rx\Thruway\Observable;
 
 use Rx\Observable;
-use Rx\Observer\CallbackObserver;
+use Rx\Subject\Subject;
 use Thruway\Common\Utils;
 use Rx\ObserverInterface;
 use Thruway\WampErrorException;
@@ -15,14 +15,14 @@ use Thruway\Message\{
 
 class TopicObservable extends Observable
 {
-    private $uri, $options, $messages, $sendMessage;
+    private $uri, $options, $messages, $webSocket;
 
-    function __construct(string $uri, array $options, Observable $messages, callable $sendMessage)
+    function __construct(string $uri, array $options, Observable $messages, Subject $webSocket)
     {
         $this->uri         = $uri;
         $this->options     = (object)$options;
         $this->messages    = $messages;
-        $this->sendMessage = $sendMessage;
+        $this->webSocket = $webSocket;
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -44,8 +44,9 @@ class TopicObservable extends Observable
             })
             ->take(1);
 
-        $sub = call_user_func($this->sendMessage, $subscribeMsg)
-            ->merge($subscribedMsg)
+        $this->webSocket->onNext($subscribeMsg);
+
+        $sub = $subscribedMsg
             ->flatMap(function (SubscribedMessage $subscribedMsg) use (&$subscriptionId) {
 
                 $subscriptionId = $subscribedMsg->getSubscriptionId();
@@ -70,7 +71,7 @@ class TopicObservable extends Observable
                 return;
             }
             $unsubscribeMsg = new UnsubscribeMessage(Utils::getUniqueId(), $subscriptionId);
-            call_user_func($this->sendMessage, $unsubscribeMsg)->take(1)->subscribe(new CallbackObserver(), $scheduler);
+            $this->webSocket->onNext($unsubscribeMsg);
         }));
 
         return $disposable;
