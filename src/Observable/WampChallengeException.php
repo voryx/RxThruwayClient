@@ -6,7 +6,7 @@ use Thruway\Message\ChallengeMessage;
 use Thruway\Message\ErrorMessage;
 use Thruway\WampErrorException;
 
-class WampChallengeException extends WampErrorException
+final class WampChallengeException extends WampErrorException
 {
     private $challengeMessage;
 

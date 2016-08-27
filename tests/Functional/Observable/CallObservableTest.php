@@ -3,6 +3,8 @@
 namespace Rx\Thruway\Tests\Functional\Observable;
 
 use Rx\Observable;
+use Rx\Observer\CallbackObserver;
+use Rx\Subject\Subject;
 use Thruway\Message\CallMessage;
 use Rx\Functional\FunctionalTestCase;
 use Rx\Thruway\Observable\CallObservable;
@@ -14,10 +16,19 @@ use Thruway\WampErrorException;
 class CallObservableTest extends FunctionalTestCase
 {
 
-    public function sendMessage(CallMessage $msg)
+    private $webSocket;
+
+    public function setUp()
     {
-        $this->assertEquals($msg->getUri(), 'testing.uri');
-        return Observable::emptyObservable();
+        $this->webSocket = new Subject();
+
+        $this->webSocket->subscribe(new CallbackObserver(
+            function (CallMessage $msg) {
+                $this->assertEquals($msg->getUri(), 'testing.uri');
+            }
+        ));
+
+        parent::setup();
     }
 
     /**
@@ -28,7 +39,7 @@ class CallObservableTest extends FunctionalTestCase
         $messages = Observable::never();
 
         $results = $this->scheduler->startWithCreate(function () use ($messages) {
-            return new CallObservable('testing.uri', $messages, [$this, 'sendMessage']);
+            return new CallObservable('testing.uri', $messages, $this->webSocket);
         });
 
         $this->assertMessages([], $results->getMessages());
@@ -45,7 +56,7 @@ class CallObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages) {
-            return new CallObservable('testing.uri', $messages, [$this, 'sendMessage']);
+            return new CallObservable('testing.uri', $messages, $this->webSocket);
         });
 
         $this->assertMessages([
@@ -61,11 +72,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, new \stdClass());
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -74,8 +85,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -94,11 +105,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, new \stdClass(), $args);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -107,8 +118,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -127,11 +138,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, new \stdClass(), $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -140,8 +151,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -163,11 +174,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -176,8 +187,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -199,11 +210,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -215,8 +226,8 @@ class CallObservableTest extends FunctionalTestCase
 
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -239,11 +250,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -253,8 +264,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -276,11 +287,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -290,8 +301,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -312,11 +323,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -326,8 +337,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -349,9 +360,10 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($error) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($error) {
             throw $error;
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -360,8 +372,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -377,11 +389,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $errorMessage = new ErrorMessage(12345, null, new \stdClass(), 'some.server.error');
 
-        $sendMessage = function (CallMessage $msg) use ($errorMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($errorMessage) {
             $requestId = $msg->getRequestId();
             $errorMessage->setErrorRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -390,8 +402,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -410,11 +422,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -423,8 +435,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithDispose(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithDispose(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         }, 220);
 
         $this->assertMessages([], $results->getMessages());
@@ -442,11 +454,11 @@ class CallObservableTest extends FunctionalTestCase
 
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
-        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
             $requestId = $msg->getRequestId();
             $resultMessage->setRequestId($requestId);
-            return Observable::emptyObservable();
-        };
+        });
 
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -455,8 +467,8 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithDispose(function () use ($messages, $sendMessage) {
-            return new CallObservable('testing.uri', $messages, $sendMessage);
+        $results = $this->scheduler->startWithDispose(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         }, 260);
 
         $this->assertMessages([
@@ -464,40 +476,4 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(250)
         ], $results->getMessages());
     }
-
-
-//    /**
-//     * @test
-//     */
-//    function call_one_timeout()
-//    {
-//
-//        $args    = ["testing"];
-//        $argskw  = (object)["foo" => "bar"];
-//        $details = (object)["one" => "two"];
-//
-//        $resultMessage = new ResultMessage(null, $details, $args, $argskw);
-//
-//        $sendMessage = function (CallMessage $msg) use ($resultMessage) {
-//            $requestId = $msg->getRequestId();
-//            $resultMessage->setRequestId($requestId);
-//            return Observable::emptyObservable();
-//        };
-//
-//        $messages = $this->createHotObservable([
-//            onNext(150, 1),
-//            onNext(201, new WelcomeMessage(12345, new \stdClass())),
-//            onNext(250, $resultMessage),
-//            onCompleted(350)
-//        ]);
-//
-//        $results = $this->scheduler->startWithCreate(function () use ($messages, $sendMessage) {
-//            return new CallObservable('testing.uri', $messages, $sendMessage, null, null, null, 10);
-//        });
-//
-//        $this->assertMessages([
-//            onError(210, new \Exception())
-//        ], $results->getMessages());
-//
-//    }
 }

@@ -3,16 +3,16 @@
 namespace Rx\Thruway\Observable;
 
 use Rx\Disposable\EmptyDisposable;
-use Rx\Observable;
-use Rx\ObserverInterface;
-use Rx\Subject\Subject;
-use Thruway\Common\Utils;
 use Thruway\WampErrorException;
+use Rx\ObserverInterface;
+use Thruway\Common\Utils;
+use Rx\Subject\Subject;
+use Rx\Observable;
 use Thruway\Message\{
     Message, CallMessage, ResultMessage, ErrorMessage
 };
 
-class CallObservable extends Observable
+final class CallObservable extends Observable
 {
     private $uri, $args, $argskw, $options, $messages, $webSocket, $timeout;
 
@@ -55,7 +55,6 @@ class CallObservable extends Observable
         try {
             $this->webSocket->onNext($callMsg);
         } catch (\Exception $e) {
-            $observer->onError($e);
             $observer->onError($e);
             return new EmptyDisposable();
         }

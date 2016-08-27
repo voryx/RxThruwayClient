@@ -6,7 +6,7 @@ use Thruway\Message\ErrorMessage;
 use Thruway\Message\InvocationMessage;
 use Thruway\WampErrorException;
 
-class WampInvocationException extends WampErrorException
+final class WampInvocationException extends WampErrorException
 {
     private $invocationMessage;
 

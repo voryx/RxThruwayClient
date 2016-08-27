@@ -5,7 +5,6 @@ namespace Rx\Thruway\Observable;
 use Rx\Observable;
 use Rx\ObserverInterface;
 use Rx\Subject\Subject;
-use Rx\Thruway\Subject\WebSocketSubject;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
 use Rx\Observer\CallbackObserver;
@@ -15,11 +14,11 @@ use Thruway\Message\{
     Message, RegisteredMessage, RegisterMessage, UnregisteredMessage, ErrorMessage, InvocationMessage, UnregisterMessage, YieldMessage
 };
 
-class RegisterObservable extends Observable
+final class RegisterObservable extends Observable
 {
     private $uri, $options, $messages, $ws, $callback, $extended, $logSubject;
 
-    function __construct(string $uri, callable $callback, Observable $messages, WebSocketSubject $ws, array $options = [], bool $extended = false, Subject $logSubject = null)
+    function __construct(string $uri, callable $callback, Observable $messages, Subject $ws, array $options = [], bool $extended = false, Subject $logSubject = null)
     {
         $this->uri        = $uri;
         $this->options    = $options;

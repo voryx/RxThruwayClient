@@ -2,14 +2,14 @@
 
 namespace Rx\Thruway;
 
+use Rx\Thruway\Subject\WebSocketSubject;
 use Rx\Disposable\CompositeDisposable;
-use Rx\DisposableInterface;
-use Rx\Observable;
 use Rx\Scheduler\EventLoopScheduler;
 use React\EventLoop\LoopInterface;
-use Rx\Subject\Subject;
-use Rx\Thruway\Subject\WebSocketSubject;
+use Rx\DisposableInterface;
 use Thruway\Common\Utils;
+use Rx\Subject\Subject;
+use Rx\Observable;
 use Rx\Thruway\Observable\{
     CallObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
@@ -17,7 +17,7 @@ use Thruway\Message\{
     AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
 
-class Client
+final class Client
 {
     private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable;
 
@@ -28,22 +28,23 @@ class Client
         $this->options   = $options;
         $this->loop      = $loop ?? \EventLoop\getLoop();
         $this->scheduler = new EventLoopScheduler($this->loop);
-        $open            = new Subject();
-        $close           = new Subject();
+
+        $open  = new Subject();
+        $close = new Subject();
 
         $this->webSocket = new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
 
         $this->messages = $this->webSocket
             ->map(function ($msg) {
-                echo $msg, PHP_EOL;
                 return $msg;
             })
-            ->retryWhen([$this, 'reconnect'])
+            ->retryWhen([$this, '_reconnect'])
             ->share();
 
         $this->disposable = new CompositeDisposable();
 
         $open->map(function () {
+            echo "Connected", PHP_EOL;
             return $helloMsg = new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
 
@@ -159,7 +160,6 @@ class Client
 
     public function close()
     {
-        //@todo do other close stuff.  should probably emit on a normal closing subject
         $this->disposable->dispose();
     }
 
@@ -168,16 +168,12 @@ class Client
      */
     private function getWelcomeMessage()
     {
-        return $this->messages
-            ->filter(function (Message $msg) {
-                return $msg instanceof WelcomeMessage;
-            })
-            ->doOnNext(function () {
-                echo "got welcome", PHP_EOL;
-            });
+        return $this->messages->filter(function (Message $msg) {
+            return $msg instanceof WelcomeMessage;
+        });
     }
 
-    public function reconnect(Observable $attempts)
+    public function _reconnect(Observable $attempts)
     {
         $maxRetryDelay     = 300000;
         $initialRetryDelay = 1500;
@@ -186,8 +182,10 @@ class Client
         $exponent          = 0;
 
         return $attempts
-            ->flatMap(function ($ex) use ($maxRetryDelay, $retryDelayGrowth, &$exponent, $initialRetryDelay) {
-                $delay = min($maxRetryDelay, pow($retryDelayGrowth, ++$exponent) + $initialRetryDelay);
+            ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, &$exponent, $initialRetryDelay) {
+                $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$exponent) + $initialRetryDelay);
+                $seconds = number_format((float)$delay / 1000, 3, '.', '');;
+                echo "Error: ", $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
                 return Observable::timer((int)$delay, $this->scheduler);
             })
             ->take($maxRetries);

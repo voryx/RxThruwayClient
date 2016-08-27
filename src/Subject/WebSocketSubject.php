@@ -2,15 +2,15 @@
 
 namespace Rx\Thruway\Subject;
 
-use Ratchet\Client\Connector;
-use Ratchet\Client\WebSocket;
-use React\EventLoop\LoopInterface;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
-use Rx\ObserverInterface;
 use Rx\React\RejectedPromiseException;
-use Rx\Subject\Subject;
 use Thruway\Serializer\JsonSerializer;
+use React\EventLoop\LoopInterface;
+use Ratchet\Client\Connector;
+use Ratchet\Client\WebSocket;
+use Rx\ObserverInterface;
+use Rx\Subject\Subject;
 
 final class WebSocketSubject extends Subject
 {
@@ -29,14 +29,12 @@ final class WebSocketSubject extends Subject
         $this->output          = new Subject();
     }
 
-
     public function subscribe(ObserverInterface $observer, $scheduler = null)
     {
         $this->output = new Subject();
 
         if (!$this->socket) {
-
-            $this->wsDisposable = $this->connectSocket($scheduler);
+            $this->connectSocket();
         }
 
         $disposable = new CompositeDisposable();
@@ -45,7 +43,6 @@ final class WebSocketSubject extends Subject
 
         $disposable->add(new CallbackDisposable(function () use (&$wsDisposable) {
             if (!$this->output->hasObservers() && $this->socket) {
-                echo "dispose observer", PHP_EOL;
                 $this->socket->close();
                 $this->socket = null;
             }
@@ -56,22 +53,16 @@ final class WebSocketSubject extends Subject
 
     private function connectSocket()
     {
-        echo "connecting", PHP_EOL;
-        
         try {
             $connector = new Connector($this->loop);
 
             $connector($this->url, $this->protocols)->then(
                 function (WebSocket $ws) {
-
-                    echo "connected", PHP_EOL;
-
                     $this->socket = $ws;
 
                     $ws->on("error", [$this->output, "onError"]);
                     $ws->on("close", function ($reason) {
 
-                        echo "closing", PHP_EOL;
                         if ($this->closeObserver) {
                             $this->closeObserver->onNext($reason);
                         }
@@ -84,7 +75,6 @@ final class WebSocketSubject extends Subject
                     });
 
                     $ws->on("message", function ($message) {
-                        echo "raw message: ", $message, PHP_EOL;
                         $this->output->onNext($this->serializer->deserialize($message));
                     });
 
@@ -108,7 +98,6 @@ final class WebSocketSubject extends Subject
             return;
         }
 
-        echo "sending raw message: ", $this->serializer->serialize($msg), PHP_EOL;
         $this->socket->send($this->serializer->serialize($msg));
     }
 
@@ -123,7 +112,6 @@ final class WebSocketSubject extends Subject
         }
 
         $this->socket->close(1001, $exception->getMessage());
-
         $this->socket = null;
     }
 
@@ -133,7 +121,6 @@ final class WebSocketSubject extends Subject
             return;
         }
 
-        echo "got completed", PHP_EOL;
         if ($this->closeObserver) {
             $this->closingObserver->onNext('');
         }

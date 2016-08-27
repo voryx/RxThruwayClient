@@ -13,7 +13,7 @@ use Thruway\Message\{
     Message, EventMessage, SubscribedMessage, ErrorMessage, SubscribeMessage, UnsubscribeMessage
 };
 
-class TopicObservable extends Observable
+final class TopicObservable extends Observable
 {
     private $uri, $options, $messages, $webSocket;
 
