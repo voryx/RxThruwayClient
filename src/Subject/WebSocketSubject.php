@@ -41,8 +41,10 @@ final class WebSocketSubject extends Subject
         $disposable->add($this->output->subscribe($observer, $scheduler));
 
         $disposable->add(new CallbackDisposable(function () {
-            $this->socket->close();
-            $this->socket = null;
+            if (!$this->output->hasObservers() && $this->socket) {
+                $this->socket->close();
+                $this->socket = null;
+            }
         }));
 
         return $disposable;
