@@ -14,19 +14,18 @@ use Rx\Subject\Subject;
 
 final class WebSocketSubject extends Subject
 {
-    private $url, $protocols, $socket, $openObserver, $closeObserver, $closingObserver, $output, $loop, $serializer;
+    private $url, $protocols, $socket, $openObserver, $closeObserver, $output, $loop, $serializer;
 
-    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, Subject $closingObserver = null, WebSocket $socket = null, LoopInterface $loop = null)
+    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, WebSocket $socket = null, LoopInterface $loop = null)
     {
-        $this->url             = $url;
-        $this->protocols       = $protocols;
-        $this->socket          = $socket;
-        $this->openObserver    = $openObserver;
-        $this->closeObserver   = $closeObserver;
-        $this->closingObserver = $closingObserver;
-        $this->loop            = $loop ?: \EventLoop\getLoop();
-        $this->serializer      = new JsonSerializer();
-        $this->output          = new Subject();
+        $this->url           = $url;
+        $this->protocols     = $protocols;
+        $this->socket        = $socket;
+        $this->openObserver  = $openObserver;
+        $this->closeObserver = $closeObserver;
+        $this->loop          = $loop ?: \EventLoop\getLoop();
+        $this->serializer    = new JsonSerializer();
+        $this->output        = new Subject();
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -41,11 +40,9 @@ final class WebSocketSubject extends Subject
 
         $disposable->add($this->output->subscribe($observer, $scheduler));
 
-        $disposable->add(new CallbackDisposable(function () use (&$wsDisposable) {
-            if (!$this->output->hasObservers() && $this->socket) {
-                $this->socket->close();
-                $this->socket = null;
-            }
+        $disposable->add(new CallbackDisposable(function () {
+            $this->socket->close();
+            $this->socket = null;
         }));
 
         return $disposable;
@@ -101,31 +98,13 @@ final class WebSocketSubject extends Subject
         $this->socket->send($this->serializer->serialize($msg));
     }
 
-    public function onError(\Exception $exception)
+    public function dispose()
     {
-        if (!$this->socket) {
-            return;
+        parent::dispose();
+
+        if ($this->socket) {
+            $this->socket->close();
+            $this->socket = null;
         }
-
-        if ($this->closingObserver) {
-            $this->closingObserver->onNext('');
-        }
-
-        $this->socket->close(1001, $exception->getMessage());
-        $this->socket = null;
-    }
-
-    public function onCompleted()
-    {
-        if (!$this->socket) {
-            return;
-        }
-
-        if ($this->closeObserver) {
-            $this->closingObserver->onNext('');
-        }
-
-        $this->socket->close();
-        $this->socket = null;
     }
 }

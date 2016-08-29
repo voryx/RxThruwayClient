@@ -11,10 +11,10 @@ use Thruway\Common\Utils;
 use Rx\Subject\Subject;
 use Rx\Observable;
 use Rx\Thruway\Observable\{
-    CallObservable, TopicObservable, RegisterObservable, WampChallengeException
+    CallObservable, SessionObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
-    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
+    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage
 };
 
 final class Client
@@ -23,11 +23,12 @@ final class Client
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
-        $this->url       = $url;
-        $this->realm     = $realm;
-        $this->options   = $options;
-        $this->loop      = $loop ?? \EventLoop\getLoop();
-        $this->scheduler = new EventLoopScheduler($this->loop);
+        $this->url        = $url;
+        $this->realm      = $realm;
+        $this->options    = $options;
+        $this->loop       = $loop ?? \EventLoop\getLoop();
+        $this->scheduler  = new EventLoopScheduler($this->loop);
+        $this->disposable = new CompositeDisposable();
 
         $open  = new Subject();
         $close = new Subject();
@@ -41,14 +42,18 @@ final class Client
             ->retryWhen([$this, '_reconnect'])
             ->share();
 
-        $this->disposable = new CompositeDisposable();
-
         $open->map(function () {
             echo "Connected", PHP_EOL;
             return $helloMsg = new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
 
-        $this->session = $this->getWelcomeMessage()->shareReplay(1);
+        $close->subscribeCallback(function () {
+            echo "Disconnected", PHP_EOL;
+        });
+
+        $this->session = new SessionObservable($this->messages);
+
+        $this->disposable->add($this->webSocket);
     }
 
     /**
@@ -161,16 +166,6 @@ final class Client
     public function close()
     {
         $this->disposable->dispose();
-    }
-
-    /**
-     * Emits new sessions onto a session subject
-     */
-    private function getWelcomeMessage()
-    {
-        return $this->messages->filter(function (Message $msg) {
-            return $msg instanceof WelcomeMessage;
-        });
     }
 
     public function _reconnect(Observable $attempts)
