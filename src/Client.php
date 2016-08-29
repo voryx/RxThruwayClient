@@ -123,7 +123,9 @@ final class Client
             ->mapTo($obs->doOnCompleted(function () use ($completed) {
                 $completed->onNext(0);
             }))
-            ->concatAll()//this should be switchFirst() so it can resume if the websocket connection resets
+            ->lift(function () {
+                return new SwitchFirstOperator();
+            })
             ->map(function ($value) use ($uri, $options) {
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
