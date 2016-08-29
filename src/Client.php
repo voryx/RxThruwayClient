@@ -14,12 +14,12 @@ use Rx\Thruway\Observable\{
     CallObservable, SessionObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
-    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage
+    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
 
 final class Client
 {
-    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable;
+    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable, $close;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
@@ -51,7 +51,7 @@ final class Client
             echo "Disconnected", PHP_EOL;
         });
 
-        $this->session = new SessionObservable($this->messages);
+        $this->session = new SessionObservable($this->messages, $close);
 
         $this->disposable->add($this->webSocket);
     }

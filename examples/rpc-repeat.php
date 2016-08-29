@@ -10,15 +10,15 @@ $source = $client
     ->register('com.myapp.example', function () {
         return 123;
     })
-    ->flatMapTo($client->call('com.myapp.example')
+    ->mapTo($client->call('com.myapp.example')
         ->repeatWhen(function (\Rx\Observable $attempts) {
             return $attempts
                 ->doOnNext(function () {
                     echo "Attempt made", PHP_EOL;
                 })
                 ->delay(1000);
-        })
-    );
+        }))
+    ->switchLatest();
 
 $source->subscribe(new \Rx\Observer\CallbackObserver(
     function ($res) {

@@ -11,17 +11,26 @@ use Rx\Observable;
 
 final class SessionObservable extends Observable
 {
-    private $messages, $value, $count;
+    private $messages, $value, $count, $close;
 
-    function __construct(Observable $messages)
+    function __construct(Observable $messages, Observable $close)
     {
-        $this->messages = $messages;
+        $this->messages = $messages->share();
         $this->value    = null;
         $this->count    = 0;
+        $this->close    = $close;
+
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
     {
+        $this->close->subscribe(new CallbackObserver(
+            function () {
+                $this->value = null;
+            }
+        ), $scheduler);
+
+
         $x = $this->messages
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
