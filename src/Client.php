@@ -2,6 +2,7 @@
 
 namespace Rx\Thruway;
 
+use Rx\Thruway\Subject\SessionReplaySubject;
 use Rx\Thruway\Subject\WebSocketSubject;
 use Rx\Disposable\CompositeDisposable;
 use Rx\Scheduler\EventLoopScheduler;
@@ -11,7 +12,7 @@ use Thruway\Common\Utils;
 use Rx\Subject\Subject;
 use Rx\Observable;
 use Rx\Thruway\Observable\{
-    CallObservable, SessionObservable, TopicObservable, RegisterObservable, WampChallengeException
+    CallObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
     AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
@@ -42,16 +43,23 @@ final class Client
             ->retryWhen([$this, '_reconnect'])
             ->share();
 
+        $sessionSubject = new SessionReplaySubject(1);
+
         $open->map(function () {
             echo "Connected", PHP_EOL;
             return $helloMsg = new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
 
-        $close->subscribeCallback(function () {
+        $close->subscribeCallback(function () use ($sessionSubject){
+            $sessionSubject->resetQueue();
             echo "Disconnected", PHP_EOL;
         });
 
-        $this->session = new SessionObservable($this->messages, $close);
+        $this->session = $this->messages
+            ->filter(function (Message $msg) {
+                return $msg instanceof WelcomeMessage;
+            })
+            ->multicast($sessionSubject)->refCount();
 
         $this->disposable->add($this->webSocket);
     }
