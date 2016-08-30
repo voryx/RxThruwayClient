@@ -15,12 +15,12 @@ use Rx\Thruway\Observable\{
     CallObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
-    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
+    AbortMessage, AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
 
 final class Client
 {
-    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable, $close;
+    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
@@ -41,16 +41,24 @@ final class Client
                 return $msg;
             })
             ->retryWhen([$this, '_reconnect'])
+            ->map(function (Message $msg) {
+                if ($msg instanceof AbortMessage) {
+                    //@todo create an exception for this
+                    throw new \Exception("Connection aborted because {$msg->getDetails()->message}");
+                }
+                return $msg;
+            })
             ->share();
 
         $sessionSubject = new SessionReplaySubject(1);
 
         $open->map(function () {
             echo "Connected", PHP_EOL;
+            $this->options['roles'] = $this->roles();
             return $helloMsg = new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
 
-        $close->subscribeCallback(function () use ($sessionSubject){
+        $close->subscribeCallback(function () use ($sessionSubject) {
             $sessionSubject->resetQueue();
             echo "Disconnected", PHP_EOL;
         });
@@ -194,5 +202,40 @@ final class Client
                 return Observable::timer((int)$delay, $this->scheduler);
             })
             ->take($maxRetries);
+    }
+
+    private function roles()
+    {
+        return [
+            "caller"     => [
+                "features" => [
+                    "caller_identification"    => true,
+                    "progressive_call_results" => true
+                ]
+            ],
+            "callee"     => [
+                "features" => [
+                    "caller_identification"      => true,
+                    "pattern_based_registration" => true,
+                    "shared_registration"        => true,
+                    "progressive_call_results"   => true,
+                    "registration_revocation"    => true
+                ]
+            ],
+            "publisher"  => [
+                "features" => [
+                    "publisher_identification"      => true,
+                    "subscriber_blackwhite_listing" => true,
+                    "publisher_exclusion"           => true
+                ]
+            ],
+            "subscriber" => [
+                "features" => [
+                    "publisher_identification"   => true,
+                    "pattern_based_subscription" => true,
+                    "subscription_revocation"    => true
+                ]
+            ]
+        ];
     }
 }
