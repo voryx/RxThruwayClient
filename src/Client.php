@@ -37,9 +37,6 @@ final class Client
         $this->webSocket = new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
 
         $this->messages = $this->webSocket
-            ->map(function ($msg) {
-                return $msg;
-            })
             ->retryWhen([$this, '_reconnect'])
             ->map(function (Message $msg) {
                 if ($msg instanceof AbortMessage) {
@@ -55,7 +52,7 @@ final class Client
         $open->map(function () {
             echo "Connected", PHP_EOL;
             $this->options['roles'] = $this->roles();
-            return $helloMsg = new HelloMessage($this->realm, (object)$this->options);
+            return new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
 
         $close->subscribeCallback(function () use ($sessionSubject) {
@@ -106,9 +103,16 @@ final class Client
      */
     public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true) :Observable
     {
-        return $this->session
+
+        $subject = new Subject();
+
+        $sub = $this->session
             ->flatMapTo(new RegisterObservable($uri, $callback, $this->messages, $this->webSocket, $options, $extended))
-            ->subscribeOn($this->scheduler);
+            ->subscribe($subject, $this->scheduler);
+
+        $this->disposable->add($sub);
+
+        return $subject->asObservable();
     }
 
     /**
