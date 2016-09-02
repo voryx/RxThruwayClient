@@ -47,16 +47,13 @@ final class Client
             })
             ->share();
 
-        $sessionSubject = new SessionReplaySubject(1);
-
         $open->map(function () {
             echo "Connected", PHP_EOL;
             $this->options['roles'] = $this->roles();
             return new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
 
-        $close->subscribeCallback(function () use ($sessionSubject) {
-            $sessionSubject->resetQueue();
+        $close->subscribeCallback(function () {
             echo "Disconnected", PHP_EOL;
         });
 
@@ -64,7 +61,7 @@ final class Client
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
-            ->multicast($sessionSubject)->refCount();
+            ->multicast(new SessionReplaySubject($close))->refCount();
 
         $this->disposable->add($this->webSocket);
     }
