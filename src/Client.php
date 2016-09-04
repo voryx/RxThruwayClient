@@ -77,7 +77,8 @@ final class Client
     {
         return $this->session
             ->take(1)
-            ->flatMapTo(new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options));
+            ->mapTo(new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options))
+            ->switchLatest();
     }
 
     /**
@@ -100,16 +101,9 @@ final class Client
      */
     public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true) :Observable
     {
-
-        $subject = new Subject();
-
-        $sub = $this->session
-            ->flatMapTo(new RegisterObservable($uri, $callback, $this->messages, $this->webSocket, $options, $extended))
-            ->subscribe($subject, $this->scheduler);
-
-        $this->disposable->add($sub);
-
-        return $subject->asObservable();
+        return $this->session
+            ->mapTo(new RegisterObservable($uri, $callback, $this->messages, $this->webSocket, $options, $extended))
+            ->switchLatest();
     }
 
     /**
@@ -119,7 +113,9 @@ final class Client
      */
     public function topic(string $uri, array $options = []) :Observable
     {
-        return $this->session->flatMapTo(new TopicObservable($uri, $options, $this->messages, $this->webSocket))
+        return $this->session
+            ->mapTo(new TopicObservable($uri, $options, $this->messages, $this->webSocket))
+            ->switchLatest()
             ->subscribeOn($this->scheduler);
     }
 
@@ -159,7 +155,7 @@ final class Client
             ->filter(function (Message $msg) {
                 return $msg instanceof ChallengeMessage;
             })
-            ->flatMap(function (ChallengeMessage $msg) use ($challengeCallback) {
+            ->flatMapLatest(function (ChallengeMessage $msg) use ($challengeCallback) {
                 $challengeResult = null;
                 try {
                     $challengeResult = call_user_func($challengeCallback, Observable::just([$msg->getAuthMethod(), $msg->getDetails()]));
