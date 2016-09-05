@@ -90,8 +90,8 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(250, [[], new \stdClass(), new \stdClass()]),
-            onCompleted(250)
+            onNext(251, [[], new \stdClass(), new \stdClass()]),
+            onCompleted(252)
         ], $results->getMessages());
     }
 
@@ -123,8 +123,8 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(250, [$args, new \stdClass(), new \stdClass()]),
-            onCompleted(250)
+            onNext(251, [$args, new \stdClass(), new \stdClass()]),
+            onCompleted(252)
         ], $results->getMessages());
     }
 
@@ -156,8 +156,8 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(250, [$args, $argskw, new \stdClass()]),
-            onCompleted(250)
+            onNext(251, [$args, $argskw, new \stdClass()]),
+            onCompleted(252)
         ], $results->getMessages());
 
     }
@@ -192,8 +192,8 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(250, [$args, $argskw, $details]),
-            onCompleted(250)
+            onNext(251, [$args, $argskw, $details]),
+            onCompleted(252)
         ], $results->getMessages());
 
     }
@@ -231,8 +231,8 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(250, [$args, $argskw, $details]),
-            onCompleted(250)
+            onNext(251, [$args, $argskw, $details]),
+            onCompleted(252)
         ], $results->getMessages());
 
     }
@@ -342,8 +342,8 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(230, [$args, $argskw, $details]),
-            onCompleted(230)
+            onNext(231, [$args, $argskw, $details]),
+            onCompleted(232)
         ], $results->getMessages());
     }
 
@@ -472,8 +472,8 @@ class CallObservableTest extends FunctionalTestCase
         }, 260);
 
         $this->assertMessages([
-            onNext(250, [$args, $argskw, $details]),
-            onCompleted(250)
+            onNext(251, [$args, $argskw, $details]),
+            onCompleted(252)
         ], $results->getMessages());
     }
 }

@@ -32,15 +32,35 @@ final class CallObservable extends Observable
         $requestId = Utils::getUniqueId();
         $callMsg   = new CallMessage($requestId, $this->options, $this->uri, $this->args, $this->argskw);
 
-        $resultMsg = $this->messages
+        $msg = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
                 return $msg instanceof ResultMessage && $msg->getRequestId() === $requestId;
-            });
+            })
+            ->flatMap(function (ResultMessage $msg) {
+
+                static $i = -1;
+                $i++;
+
+                $details = $msg->getDetails();
+                if ($i === 0 && (bool)($details->progress ?? false) === false) {
+                    $details = $msg->getDetails();
+
+                    $details->progress = true;
+
+                    return Observable::fromArray([
+                        new ResultMessage($msg->getRequestId(), $details, $msg->getArguments(), $msg->getArgumentsKw()),
+                        new ResultMessage($msg->getRequestId(), (object)["progress" => false])
+                    ]);
+                }
+                return Observable::just($msg);
+            })
+            ->share();
 
         //Take until we get a result without progress
-        $resultMsg = $resultMsg->takeUntil($resultMsg->filter(function (ResultMessage $msg) {
-            return !($msg->getDetails()->progess ?? false);
-        }));
+        $resultMsg = $msg->takeWhile(function (ResultMessage $msg) {
+            $details = $msg->getDetails();
+            return (bool)($details->progress ?? false);
+        });
 
         $error = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
@@ -62,7 +82,9 @@ final class CallObservable extends Observable
         return $error
             ->merge($resultMsg)
             ->map(function (ResultMessage $msg) {
-                return [$msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails()];
+                $details = $msg->getDetails();
+                unset($details->progress);
+                return [$msg->getArguments(), $msg->getArgumentsKw(), $details];
             })
             ->subscribe($observer, $scheduler);
     }

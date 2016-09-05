@@ -16,7 +16,7 @@ use Thruway\Message\{
 
 final class RegisterObservable extends Observable
 {
-    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject;
+    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject, $previousProgress;
 
     function __construct(string $uri, callable $callback, Observable $messages, Subject $ws, array $options = [], bool $extended = false, Subject $logSubject = null)
     {
@@ -93,7 +93,7 @@ final class RegisterObservable extends Observable
             ), $scheduler);
 
         $invocationSubscription = $invocationMsg
-            ->flatMap(function (InvocationMessage $msg) {
+            ->flatMapLatest(function (InvocationMessage $msg) {
 
                 try {
                     if ($this->extended) {
@@ -106,16 +106,27 @@ final class RegisterObservable extends Observable
                 }
 
                 $resultObs = $result instanceof Observable ? $result : Observable::just($result);
-                return $resultObs->map(function ($value) use ($msg) {
-                    return [$value, $msg];
-                });
+
+                if (($this->options['progress'] ?? false) === false) {
+                    return $resultObs
+                        ->take(1)
+                        ->map(function ($value) use ($msg) {
+                            return [$value, $msg, $this->options];
+                        });
+                }
+
+                return $resultObs
+                    ->map(function ($value) use ($msg) {
+                        return [$value, $msg, $this->options];
+                    })
+                    ->concat(Observable::just([null, $msg, ["progress" => false]]));
             })
             ->takeUntil($unregisteredMsg)
             ->map(function ($args) {
                 /* @var $invocationMsg InvocationMessage */
-                list($value, $invocationMsg) = $args;
+                list($value, $invocationMsg, $options) = $args;
 
-                return new YieldMessage($invocationMsg->getRequestId(), null, [$value]);
+                return new YieldMessage($invocationMsg->getRequestId(), $options, [$value]);
             })
             ->catchError(function (\Exception $error) {
                 if ($error instanceof WampInvocationException) {
