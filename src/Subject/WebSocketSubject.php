@@ -5,6 +5,7 @@ namespace Rx\Thruway\Subject;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
 use Rx\React\RejectedPromiseException;
+use Thruway\Message\AbortMessage;
 use Thruway\Serializer\JsonSerializer;
 use React\EventLoop\LoopInterface;
 use Ratchet\Client\Connector;
@@ -74,7 +75,15 @@ final class WebSocketSubject extends Subject
                     });
 
                     $ws->on("message", function ($message) {
-                        $this->output->onNext($this->serializer->deserialize($message));
+
+                        $msg = $this->serializer->deserialize($message);
+
+                        if ($msg instanceof AbortMessage) {
+                            $this->output->onError(new \Exception($msg->getResponseURI()));
+                            return;
+                        }
+
+                        $this->output->onNext($msg);
                     });
 
                     if ($this->openObserver) {

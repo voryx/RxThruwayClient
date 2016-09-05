@@ -10,15 +10,16 @@ $source = $client
     ->register('com.myapp.example', function () {
         return 123;
     })
-    ->mapTo($client->call('com.myapp.example')
-        ->repeatWhen(function (\Rx\Observable $attempts) {
-            return $attempts
-                ->doOnNext(function () {
-                    echo "Attempt made", PHP_EOL;
-                })
-                ->delay(1000);
-        }))
-    ->switchLatest();
+    ->mapTo($client->call('com.myapp.example'))
+    ->switchLatest()
+    ->take(1)
+    ->timeout(2000)
+    ->repeatWhen(function (\Rx\Observable $attempts) {
+        return $attempts->delay(1000);
+    })
+    ->retryWhen(function (\Rx\Observable $errors) {
+        return $errors->delay(1000);
+    });
 
 $source->subscribe(new \Rx\Observer\CallbackObserver(
     function ($res) {

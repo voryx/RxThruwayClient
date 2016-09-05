@@ -15,37 +15,31 @@ use Rx\Thruway\Observable\{
     CallObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
-    AbortMessage, AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
+    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
 
 final class Client
 {
-    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable;
+    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable, $challengeCallback;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
     {
-        $this->url        = $url;
-        $this->realm      = $realm;
-        $this->options    = $options;
-        $this->loop       = $loop ?? \EventLoop\getLoop();
-        $this->scheduler  = new EventLoopScheduler($this->loop);
-        $this->disposable = new CompositeDisposable();
+        $this->url               = $url;
+        $this->realm             = $realm;
+        $this->options           = $options;
+        $this->loop              = $loop ?? \EventLoop\getLoop();
+        $this->scheduler         = new EventLoopScheduler($this->loop);
+        $this->disposable        = new CompositeDisposable();
+        $this->challengeCallback = function () {
+
+        };
 
         $open  = new Subject();
         $close = new Subject();
 
         $this->webSocket = new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
 
-        $this->messages = $this->webSocket
-            ->retryWhen([$this, '_reconnect'])
-            ->map(function (Message $msg) {
-                if ($msg instanceof AbortMessage) {
-                    //@todo create an exception for this
-                    throw new \Exception("Connection aborted because {$msg->getDetails()->message}");
-                }
-                return $msg;
-            })
-            ->share();
+        $this->messages = $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
 
         $open->map(function () {
             echo "Connected", PHP_EOL;
@@ -57,7 +51,32 @@ final class Client
             echo "Disconnected", PHP_EOL;
         });
 
+        $challengeMsg = $this->messages
+            ->filter(function (Message $msg) {
+                return $msg instanceof ChallengeMessage;
+            })
+            ->flatMapLatest(function (ChallengeMessage $msg) {
+                $challengeResult = null;
+                try {
+                    $challengeResult = call_user_func($this->challengeCallback, Observable::just([$msg->getAuthMethod(), $msg->getDetails()]));
+                } catch (\Exception $e) {
+                    throw new WampChallengeException($msg);
+                }
+                return $challengeResult->take(1);
+            })
+            ->map(function ($signature) {
+                return new AuthenticateMessage($signature);
+            })
+            ->catchError(function (\Exception $ex) {
+                if ($ex instanceof WampChallengeException) {
+                    return Observable::just($ex->getErrorMessage());
+                }
+                return Observable::error($ex);
+            })
+            ->doOnEach($this->webSocket);
+
         $this->session = $this->messages
+            ->merge($challengeMsg)
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
@@ -151,31 +170,7 @@ final class Client
 
     public function onChallenge(callable $challengeCallback)
     {
-        $sub = $this->messages
-            ->filter(function (Message $msg) {
-                return $msg instanceof ChallengeMessage;
-            })
-            ->flatMapLatest(function (ChallengeMessage $msg) use ($challengeCallback) {
-                $challengeResult = null;
-                try {
-                    $challengeResult = call_user_func($challengeCallback, Observable::just([$msg->getAuthMethod(), $msg->getDetails()]));
-                } catch (\Exception $e) {
-                    throw new WampChallengeException($msg);
-                }
-                return $challengeResult->take(1);
-            })
-            ->map(function ($signature) {
-                return new AuthenticateMessage($signature);
-            })
-            ->catchError(function (\Exception $ex) {
-                if ($ex instanceof WampChallengeException) {
-                    return Observable::just($ex->getErrorMessage());
-                }
-                return Observable::error($ex);
-            })
-            ->subscribe($this->webSocket, $this->scheduler);
-
-        $this->disposable->add($sub);
+        $this->challengeCallback = $challengeCallback;
     }
 
     public function close()
