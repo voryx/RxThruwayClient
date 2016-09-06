@@ -66,11 +66,11 @@ final class WebSocketSubject extends Subject
                         if ($this->closeObserver) {
                             $this->closeObserver->onNext($reason);
                         }
-
-                        if ($reason === 1000) {
-                            $this->output->onCompleted();
-                            return;
-                        }
+//                        Until we can figure out a better way, handle all closes as errors
+//                        if ($reason === 1000) {
+//                            $this->output->onCompleted();
+//                            return;
+//                        }
                         $this->output->onError(new \Exception($reason));
                     });
 
