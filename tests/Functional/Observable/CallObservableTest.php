@@ -3,10 +3,9 @@
 namespace Rx\Thruway\Tests\Functional\Observable;
 
 use Rx\Observable;
-use Rx\Observer\CallbackObserver;
 use Rx\Subject\Subject;
 use Thruway\Message\CallMessage;
-use Rx\Functional\FunctionalTestCase;
+use Rx\Thruway\Tests\Functional\FunctionalTestCase;
 use Rx\Thruway\Observable\CallObservable;
 use Thruway\Message\ErrorMessage;
 use Thruway\Message\ResultMessage;
@@ -16,21 +15,6 @@ use Thruway\WampErrorException;
 class CallObservableTest extends FunctionalTestCase
 {
 
-    private $webSocket;
-
-    public function setUp()
-    {
-        $this->webSocket = new Subject();
-
-        $this->webSocket->subscribe(new CallbackObserver(
-            function (CallMessage $msg) {
-                $this->assertEquals($msg->getUri(), 'testing.uri');
-            }
-        ));
-
-        parent::setup();
-    }
-
     /**
      * @test
      */
@@ -38,11 +22,21 @@ class CallObservableTest extends FunctionalTestCase
     {
         $messages = Observable::never();
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages) {
-            return new CallObservable('testing.uri', $messages, $this->webSocket);
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function ($msg) {
+            $this->recordWampMessage($msg);
+        });
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([], $results->getMessages());
+
+        $this->assertWampMessages([
+            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
+            [1000, '[49,12345,{}]'] //CancelMessage
+        ], $this->getWampMessages());
     }
 
     /**
@@ -55,8 +49,13 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(235)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages) {
-            return new CallObservable('testing.uri', $messages, $this->webSocket);
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function ($msg) {
+            $this->recordWampMessage($msg);
+        });
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -251,9 +250,12 @@ class CallObservableTest extends FunctionalTestCase
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
-            $requestId = $msg->getRequestId();
-            $resultMessage->setRequestId($requestId);
+        $webSocket->subscribeCallback(function ($msg) use ($resultMessage) {
+            $this->recordWampMessage($msg);
+            if ($msg instanceof CallMessage) {
+                $requestId = $msg->getRequestId();
+                $resultMessage->setRequestId($requestId);
+            }
         });
 
         $messages = $this->createHotObservable([
@@ -271,6 +273,11 @@ class CallObservableTest extends FunctionalTestCase
         $this->assertMessages([
             onError(210, $error)
         ], $results->getMessages());
+
+        $this->assertWampMessages([
+            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
+            [1000, '[49,12345,{}]'] //CancelMessage
+        ], $this->getWampMessages());
     }
 
 
@@ -288,9 +295,12 @@ class CallObservableTest extends FunctionalTestCase
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
-            $requestId = $msg->getRequestId();
-            $resultMessage->setRequestId($requestId);
+        $webSocket->subscribeCallback(function ($msg) use ($resultMessage) {
+            $this->recordWampMessage($msg);
+            if ($msg instanceof CallMessage) {
+                $requestId = $msg->getRequestId();
+                $resultMessage->setRequestId($requestId);
+            }
         });
 
         $messages = $this->createHotObservable([
@@ -308,6 +318,11 @@ class CallObservableTest extends FunctionalTestCase
         $this->assertMessages([
             onError(220, $error)
         ], $results->getMessages());
+
+        $this->assertWampMessages([
+            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
+            [1000, '[49,12345,{}]'] //CancelMessage
+        ], $this->getWampMessages());
     }
 
     /**
@@ -390,9 +405,12 @@ class CallObservableTest extends FunctionalTestCase
         $errorMessage = new ErrorMessage(12345, null, new \stdClass(), 'some.server.error');
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (CallMessage $msg) use ($errorMessage) {
-            $requestId = $msg->getRequestId();
-            $errorMessage->setErrorRequestId($requestId);
+        $webSocket->subscribeCallback(function ($msg) use ($errorMessage) {
+            if ($msg instanceof CallMessage) {
+                $requestId = $msg->getRequestId();
+                $errorMessage->setErrorRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
         });
 
         $messages = $this->createHotObservable([
@@ -409,6 +427,11 @@ class CallObservableTest extends FunctionalTestCase
         $this->assertMessages([
             onError(251, new WampErrorException('some.server.error'))
         ], $results->getMessages());
+
+        $this->assertWampMessages([
+            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
+            [1000, '[49,12345,{}]'] //CancelMessage
+        ], $this->getWampMessages());
     }
 
     /**
@@ -423,9 +446,12 @@ class CallObservableTest extends FunctionalTestCase
         $resultMessage = new ResultMessage(null, $details, $args, $argskw);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (CallMessage $msg) use ($resultMessage) {
-            $requestId = $msg->getRequestId();
-            $resultMessage->setRequestId($requestId);
+        $webSocket->subscribeCallback(function ($msg) use ($resultMessage) {
+            if ($msg instanceof CallMessage) {
+                $requestId = $msg->getRequestId();
+                $resultMessage->setRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
         });
 
         $messages = $this->createHotObservable([
@@ -440,6 +466,11 @@ class CallObservableTest extends FunctionalTestCase
         }, 220);
 
         $this->assertMessages([], $results->getMessages());
+
+        $this->assertWampMessages([
+            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
+            [220, '[49,12345,{}]'] //CancelMessage
+        ], $this->getWampMessages());
 
     }
 

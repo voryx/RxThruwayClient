@@ -16,7 +16,7 @@ use Thruway\Message\{
 
 final class CallObservable extends Observable
 {
-    private $uri, $args, $argskw, $options, $messages, $webSocket, $timeout;
+    private $uri, $args, $argskw, $options, $messages, $webSocket, $timeout, $completed;
 
     function __construct(string $uri, Observable $messages, Subject $webSocket, array $args = null, array $argskw = null, array $options = null, int $timeout = 300000)
     {
@@ -27,6 +27,7 @@ final class CallObservable extends Observable
         $this->messages  = $messages;
         $this->webSocket = $webSocket;
         $this->timeout   = $timeout;
+        $this->completed = false;
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -87,11 +88,14 @@ final class CallObservable extends Observable
                 $details = $msg->getDetails();
                 unset($details->progress);
                 return [$msg->getArguments(), $msg->getArgumentsKw(), $details];
+            })
+            ->doOnCompleted(function () {
+                $this->completed = true;
             });
 
         return new CompositeDisposable([
             new CallbackDisposable(function () use ($requestId) {
-                if ((bool)($this->options->receive_progress ?? false)){
+                if (!$this->completed) {
                     $cancelMsg = new CancelMessage($requestId, (object)[]);
                     $this->webSocket->onNext($cancelMsg);
                 }
