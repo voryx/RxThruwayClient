@@ -207,6 +207,7 @@ final class Client
             ],
             "callee"     => [
                 "features" => [
+                    "call_canceling"             => true,
                     "caller_identification"      => true,
                     "pattern_based_registration" => true,
                     "shared_registration"        => true,

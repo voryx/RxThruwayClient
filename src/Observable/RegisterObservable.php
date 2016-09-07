@@ -11,12 +11,12 @@ use Rx\Observer\CallbackObserver;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
 use Thruway\Message\{
-    Message, RegisteredMessage, RegisterMessage, UnregisteredMessage, ErrorMessage, InvocationMessage, UnregisterMessage, YieldMessage
+    InterruptMessage, Message, RegisteredMessage, RegisterMessage, UnregisteredMessage, ErrorMessage, InvocationMessage, UnregisterMessage, YieldMessage
 };
 
 final class RegisterObservable extends Observable
 {
-    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject, $previousProgress;
+    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject;
 
     function __construct(string $uri, callable $callback, Observable $messages, Subject $ws, array $options = [], bool $extended = false, Subject $logSubject = null)
     {
@@ -108,18 +108,28 @@ final class RegisterObservable extends Observable
                 $resultObs = $result instanceof Observable ? $result : Observable::just($result);
 
                 if (($this->options['progress'] ?? false) === false) {
-                    return $resultObs
+                    $returnObs = $resultObs
                         ->take(1)
                         ->map(function ($value) use ($msg) {
                             return [$value, $msg, $this->options];
                         });
+                } else {
+
+                    $returnObs = $resultObs
+                        ->map(function ($value) use ($msg) {
+                            return [$value, $msg, $this->options];
+                        })
+                        ->concat(Observable::just([null, $msg, ["progress" => false]]));
                 }
 
-                return $resultObs
-                    ->map(function ($value) use ($msg) {
-                        return [$value, $msg, $this->options];
+                $interruptMsg = $this->messages
+                    ->filter(function (Message $m) use ($msg) {
+                        return $m instanceof InterruptMessage && $m->getRequestId() === $msg->getRequestId();
                     })
-                    ->concat(Observable::just([null, $msg, ["progress" => false]]));
+                    ->take(1);
+
+                return $returnObs->takeUntil($interruptMsg);
+
             })
             ->takeUntil($unregisteredMsg)
             ->map(function ($args) {

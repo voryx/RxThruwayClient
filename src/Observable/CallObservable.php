@@ -2,6 +2,8 @@
 
 namespace Rx\Thruway\Observable;
 
+use Rx\Disposable\CallbackDisposable;
+use Rx\Disposable\CompositeDisposable;
 use Rx\Disposable\EmptyDisposable;
 use Thruway\WampErrorException;
 use Rx\ObserverInterface;
@@ -9,7 +11,7 @@ use Thruway\Common\Utils;
 use Rx\Subject\Subject;
 use Rx\Observable;
 use Thruway\Message\{
-    Message, CallMessage, ResultMessage, ErrorMessage
+    CancelMessage, Message, CallMessage, ResultMessage, ErrorMessage
 };
 
 final class CallObservable extends Observable
@@ -79,13 +81,21 @@ final class CallObservable extends Observable
             return new EmptyDisposable();
         }
 
-        return $error
+        $result = $error
             ->merge($resultMsg)
             ->map(function (ResultMessage $msg) {
                 $details = $msg->getDetails();
                 unset($details->progress);
                 return [$msg->getArguments(), $msg->getArgumentsKw(), $details];
-            })
-            ->subscribe($observer, $scheduler);
+            });
+
+        return new CompositeDisposable([
+            new CallbackDisposable(function () use ($requestId) {
+                $cancelMsg = new CancelMessage($requestId, (object)[]);
+                $this->webSocket->onNext($cancelMsg);
+            }),
+
+            $result->subscribe($observer, $scheduler)
+        ]);
     }
 }
