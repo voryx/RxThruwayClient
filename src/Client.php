@@ -150,7 +150,7 @@ final class Client
 
         $completed = new Subject();
 
-        $sub = $this->session
+        return $this->session
             ->takeUntil($completed)
             ->mapTo($obs->doOnCompleted(function () use ($completed) {
                 $completed->onNext(0);
@@ -162,10 +162,6 @@ final class Client
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
             ->subscribe($this->webSocket, $this->scheduler);
-
-        $this->disposable->add($sub);
-
-        return $sub;
     }
 
     public function onChallenge(callable $challengeCallback)
