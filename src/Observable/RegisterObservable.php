@@ -93,7 +93,7 @@ final class RegisterObservable extends Observable
             ), $scheduler);
 
         $invocationSubscription = $invocationMsg
-            ->flatMapLatest(function (InvocationMessage $msg) {
+            ->flatMap(function (InvocationMessage $msg) {
 
                 try {
                     if ($this->extended) {
