@@ -7,8 +7,8 @@ require __DIR__ . '/../vendor/autoload.php';
 
 $client = new Client('ws://127.0.0.1:9090', "realm1");
 
-$client->call('com.myapp.example', [1234], [], ["receive_progress" => true])
-    ->take(10)
+$client->progressiveCall('com.myapp.example', [1234], [])
+//    ->take(10)
     ->subscribe(new CallbackObserver(
             function ($res) {
                 list($args, $argskw, $details) = $res;

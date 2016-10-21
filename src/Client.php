@@ -22,7 +22,7 @@ final class Client
 {
     private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable, $challengeCallback;
 
-    public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null)
+    public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null, Subject $webSocket = null, Observable $messages = null, Observable $session = null)
     {
         $this->url               = $url;
         $this->realm             = $realm;
@@ -37,9 +37,9 @@ final class Client
         $open  = new Subject();
         $close = new Subject();
 
-        $this->webSocket = new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
+        $this->webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
 
-        $this->messages = $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
+        $this->messages = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
 
         $open->map(function () {
             echo "Connected", PHP_EOL;
@@ -75,7 +75,7 @@ final class Client
             })
             ->doOnEach($this->webSocket);
 
-        $this->session = $this->messages
+        $this->session = $session ?: $this->messages
             ->merge($challengeMsg)
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
@@ -109,6 +109,43 @@ final class Client
     public function register(string $uri, callable $callback, array $options = []) :Observable
     {
         return $this->registerExtended($uri, $callback, $options, false);
+    }
+
+    /**
+     * This is a variant of call, that expects the far end to emit more than one result.  It will also repeat the call,
+     * if the websocket connection resets and the observable has not completed or errored.
+     *
+     * @param string $uri
+     * @param array $args
+     * @param array $argskw
+     * @param array $options
+     * @return Observable
+     */
+    public function progressiveCall(string $uri, array $args = [], array $argskw = [], array $options = null) :Observable
+    {
+        $options['receive_progress'] = true;
+
+        $completed = new Subject();
+        $callObs   = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
+
+        return $this->session
+            ->takeUntil($completed)
+            ->mapTo($callObs->doOnCompleted(function () use ($completed) {
+                $completed->onNext(0);
+            }))
+            ->switchLatest();
+    }
+
+    /**
+     * @param string $uri
+     * @param callable $callback
+     * @param array $options
+     * @return Observable
+     */
+    public function progressiveRegister(string $uri, callable $callback, array $options = []) :Observable
+    {
+        $options['progress'] = true;
+        return $this->registerExtended($uri, $callback, $options);
     }
 
     /**
