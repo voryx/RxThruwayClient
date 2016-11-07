@@ -140,6 +140,9 @@ final class Client
     public function progressiveRegister(string $uri, callable $callback, array $options = []) :Observable
     {
         $options['progress'] = true;
+
+        $options['replace_orphaned_session'] = 'yes';
+
         return $this->registerExtended($uri, $callback, $options);
     }
 
