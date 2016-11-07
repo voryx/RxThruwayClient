@@ -42,14 +42,9 @@ final class Client
         $this->messages = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
 
         $open->map(function () {
-            echo "Connected", PHP_EOL;
             $this->options['roles'] = $this->roles();
             return new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
-
-        $close->subscribeCallback(function () {
-            echo "Disconnected", PHP_EOL;
-        });
 
         $challengeMsg = $this->messages
             ->filter(function (Message $msg) {
