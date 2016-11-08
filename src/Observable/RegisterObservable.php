@@ -16,17 +16,18 @@ use Thruway\Message\{
 
 final class RegisterObservable extends Observable
 {
-    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject;
+    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject, $invocationErrors;
 
     function __construct(string $uri, callable $callback, Observable $messages, Subject $ws, array $options = [], bool $extended = false, Subject $logSubject = null)
     {
-        $this->uri        = $uri;
-        $this->options    = $options;
-        $this->callback   = $callback;
-        $this->messages   = $messages->share();
-        $this->ws         = $ws;
-        $this->extended   = $extended;
-        $this->logSubject = $logSubject ?: new Subject();
+        $this->uri              = $uri;
+        $this->options          = $options;
+        $this->callback         = $callback;
+        $this->messages         = $messages->share();
+        $this->ws               = $ws;
+        $this->extended         = $extended;
+        $this->logSubject       = $logSubject ?: new Subject();
+        $this->invocationErrors = new Subject();
     }
 
     public function subscribe(ObserverInterface $observer, $scheduler = null)
@@ -102,7 +103,8 @@ final class RegisterObservable extends Observable
                         $result = call_user_func_array($this->callback, $msg->getArguments());
                     }
                 } catch (\Exception $e) {
-                    throw new WampInvocationException($msg);
+                    $this->invocationErrors->onNext(new WampInvocationException($msg));
+                    return Observable::emptyObservable();
                 }
 
                 $resultObs = $result instanceof Observable ? $result : Observable::just($result);
@@ -128,24 +130,29 @@ final class RegisterObservable extends Observable
                     })
                     ->take(1);
 
-                return $returnObs->takeUntil($interruptMsg);
+                return $returnObs
+                    ->takeUntil($interruptMsg)
+                    ->catchError(function (\Exception $ex) use ($msg) {
+                        $this->invocationErrors->onNext(new WampInvocationException($msg));
+                        return Observable::emptyObservable();
+                    });
 
             })
-            ->takeUntil($unregisteredMsg)
             ->map(function ($args) {
                 /* @var $invocationMsg InvocationMessage */
                 list($value, $invocationMsg, $options) = $args;
 
                 return new YieldMessage($invocationMsg->getRequestId(), $options, [$value]);
             })
-            ->catchError(function (\Exception $error) {
-                if ($error instanceof WampInvocationException) {
-                    return Observable::just($error->getErrorMessage());
-                }
-                return Observable::error($error);
+            ->subscribe($this->ws, $scheduler);
+
+        $invocationErrors = $this->invocationErrors
+            ->map(function (WampInvocationException $error) {
+                return $error->getErrorMessage();
             })
             ->subscribe($this->ws, $scheduler);
 
+        $disposable->add($invocationErrors);
         $disposable->add($invocationSubscription);
         $disposable->add($registerSubscription);
         $disposable->add(new CallbackDisposable($unregister));

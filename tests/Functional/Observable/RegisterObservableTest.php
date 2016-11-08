@@ -37,7 +37,7 @@ class RegisterObservableTest extends FunctionalTestCase
      */
     function register_message_never()
     {
-        $messages    = Observable::never();
+        $messages = Observable::never();
 
         $webSocket = new Subject();
         $webSocket->subscribeCallback(function (RegisterMessage $msg) {
@@ -414,16 +414,19 @@ class RegisterObservableTest extends FunctionalTestCase
             [261, '[70,12345,{},[3]]'], //YieldMessage
             [350, '[66,12345,54321]'] //UnregisterMessage
         ], $this->getWampMessages());
+
+        $this->assertSubscriptions([
+            subscribe(200, 350)
+        ], $messages->getSubscriptions());
     }
 
     /**
      * @test
      */
-    function register_with_invocation_error()
+    function register_callback_throws()
     {
-        $error         = new \Exception("testing");
         $registeredMsg = new RegisteredMessage(null, 54321);
-        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1, 2]);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
         $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
@@ -434,10 +437,6 @@ class RegisterObservableTest extends FunctionalTestCase
             $this->recordWampMessage($msg);
         });
 
-        $callable = function () use ($error) {
-            throw $error;
-        };
-
         $messages = $this->createHotObservable([
             onNext(150, 1),
             onNext(201, new WelcomeMessage(12345, new \stdClass())),
@@ -446,8 +445,10 @@ class RegisterObservableTest extends FunctionalTestCase
             onCompleted(350)
         ]);
 
-        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket, $callable) {
-            return new RegisterObservable('testing.uri', $callable, $messages, $webSocket);
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', function () {
+                throw new \Exception('error');
+            }, $messages, $webSocket);
         });
 
         $this->assertMessages([
@@ -458,10 +459,155 @@ class RegisterObservableTest extends FunctionalTestCase
         //Sent Wamp Messages
         $this->assertWampMessages([
             [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
-            [261, '[8,68,12345,{},"thruway.error.invocation_exception"]'] //ErrorMessage
+            [260, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
         ], $this->getWampMessages());
     }
-    
+
+    /**
+     * @test
+     */
+    function register_callback_throws_multiple()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onNext(270, $invocationMsg),
+            onNext(280, $invocationMsg),
+            onNext(290, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', function () {
+                throw new \Exception('error');
+            }, $messages, $webSocket);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [260, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [270, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [280, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [290, '[8,68,12345,{},"thruway.error.invocation_exception"]'],  //ErrorMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    function register_callback_errors()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', function () {
+                return Observable::error(new \Exception('error'));
+            }, $messages, $webSocket);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    function register_callback_errors_multiple()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onNext(270, $invocationMsg),
+            onNext(280, $invocationMsg),
+            onNext(290, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', function () {
+                return Observable::error(new \Exception('error'));
+            }, $messages, $webSocket);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [271, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [281, '[8,68,12345,{},"thruway.error.invocation_exception"]'], //ErrorMessage
+            [291, '[8,68,12345,{},"thruway.error.invocation_exception"]'],  //ErrorMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
     /**
      * @test
      */
@@ -498,5 +644,9 @@ class RegisterObservableTest extends FunctionalTestCase
         $this->assertWampMessages([
             [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
         ], $this->getWampMessages());
+
+        $this->assertSubscriptions([
+            subscribe(200, 350)
+        ], $messages->getSubscriptions());
     }
 }
