@@ -2,6 +2,8 @@
 
 namespace Rx\Thruway\Subject;
 
+use Ratchet\RFC6455\Messaging\Frame;
+use React\EventLoop\Timer\Timer;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
 use Rx\React\RejectedPromiseException;
@@ -60,9 +62,31 @@ final class WebSocketSubject extends Subject
                 function (WebSocket $ws) {
                     $this->socket = $ws;
 
-                    $ws->on("error", [$this->output, "onError"]);
-                    $ws->on("close", function ($reason) {
+                    $lastReceivedPong = 0;
+                    $pingTimer        = $this->loop->addPeriodicTimer(30, function (Timer $timer) use ($ws, &$lastReceivedPong) {
+                        static $sequence = 0;
 
+                        if ($lastReceivedPong != $sequence) {
+                            $timer->cancel();
+                            $ws->close();
+                        }
+
+                        $sequence++;
+                        $frame = new Frame($sequence, true, Frame::OP_PING);
+                        $ws->send($frame);
+
+                    });
+
+                    $ws->on('pong', function (Frame $frame) use (&$lastReceivedPong) {
+                        $lastReceivedPong = $frame->getPayload();
+                    });
+
+                    $ws->on("error", function (\Exception $ex) use ($pingTimer) {
+                        $pingTimer->cancel();
+                        $this->output->onError($ex);
+                    });
+                    $ws->on("close", function ($reason) use ($pingTimer) {
+                        $pingTimer->cancel();
                         if ($this->closeObserver) {
                             $this->closeObserver->onNext($reason);
                         }

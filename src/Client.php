@@ -20,7 +20,10 @@ use Thruway\Message\{
 
 final class Client
 {
+
     private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable, $challengeCallback;
+
+    private $currentRetryCount = 0;
 
     public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null, Subject $webSocket = null, Observable $messages = null, Observable $session = null)
     {
@@ -41,7 +44,11 @@ final class Client
 
         $this->messages = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
 
-        $open->map(function () {
+        $open
+            ->doOnNext(function(){
+                $this->currentRetryCount = 0;
+            })
+            ->map(function () {
             $this->options['roles'] = $this->roles();
             return new HelloMessage($this->realm, (object)$this->options);
         })->subscribe($this->webSocket, $this->scheduler);
@@ -211,15 +218,17 @@ final class Client
 
     public function _reconnect(Observable $attempts)
     {
-        $maxRetryDelay     = 300000;
+        $maxRetryDelay     = 150000;
         $initialRetryDelay = 1500;
         $retryDelayGrowth  = 1.5;
         $maxRetries        = 150;
-        $exponent          = 0;
 
         return $attempts
-            ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, &$exponent, $initialRetryDelay) {
-                $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$exponent) + $initialRetryDelay);
+            ->doOnNext(function(){
+
+            })
+            ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
+                $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
                 $seconds = number_format((float)$delay / 1000, 3, '.', '');;
                 echo "Error: ", $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
                 return Observable::timer((int)$delay, $this->scheduler);
