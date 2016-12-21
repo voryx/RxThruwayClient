@@ -32,3 +32,9 @@ foreach ($locations as $location) {
         break;
     }
 }
+
+/**
+ * The default scheduler is the EventLoopScheduler, which is asynchronous.
+ * For testing we need to block at `subscribe`, so we need to switch the default to the ImmediateScheduler.
+ */
+\Rx\Scheduler::setDefault(new \Rx\Scheduler\ImmediateScheduler());

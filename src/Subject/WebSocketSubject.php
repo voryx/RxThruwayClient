@@ -6,10 +6,10 @@ use Ratchet\RFC6455\Messaging\Frame;
 use React\EventLoop\Timer\Timer;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
-use Rx\React\RejectedPromiseException;
+use Rx\DisposableInterface;
+use Rx\Thruway\ReactAsyncInteropLoop;
 use Thruway\Message\AbortMessage;
 use Thruway\Serializer\JsonSerializer;
-use React\EventLoop\LoopInterface;
 use Ratchet\Client\Connector;
 use Ratchet\Client\WebSocket;
 use Rx\ObserverInterface;
@@ -19,19 +19,19 @@ final class WebSocketSubject extends Subject
 {
     private $url, $protocols, $socket, $openObserver, $closeObserver, $output, $loop, $serializer;
 
-    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, WebSocket $socket = null, LoopInterface $loop = null)
+    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, WebSocket $socket = null)
     {
         $this->url           = $url;
         $this->protocols     = $protocols;
         $this->socket        = $socket;
         $this->openObserver  = $openObserver;
         $this->closeObserver = $closeObserver;
-        $this->loop          = $loop ?: \EventLoop\getLoop();
         $this->serializer    = new JsonSerializer();
+        $this->loop          = new ReactAsyncInteropLoop();
         $this->output        = new Subject();
     }
 
-    public function subscribe(ObserverInterface $observer, $scheduler = null)
+    public function _subscribe(ObserverInterface $observer): DisposableInterface
     {
         $this->output = new Subject();
 
@@ -41,10 +41,10 @@ final class WebSocketSubject extends Subject
 
         $disposable = new CompositeDisposable();
 
-        $disposable->add($this->output->subscribe($observer, $scheduler));
+        $disposable->add($this->output->subscribe($observer));
 
         $disposable->add(new CallbackDisposable(function () {
-            if (!$this->output->hasObservers() && $this->socket) {
+            if ($this->socket && !$this->output->hasObservers()) {
                 $this->socket->close();
                 $this->socket = null;
             }
@@ -66,7 +66,7 @@ final class WebSocketSubject extends Subject
                     $pingTimer        = $this->loop->addPeriodicTimer(30, function (Timer $timer) use ($ws, &$lastReceivedPong) {
                         static $sequence = 0;
 
-                        if ($lastReceivedPong != $sequence) {
+                        if ($lastReceivedPong !== $sequence) {
                             $timer->cancel();
                             $ws->close();
                         }
@@ -81,11 +81,11 @@ final class WebSocketSubject extends Subject
                         $lastReceivedPong = $frame->getPayload();
                     });
 
-                    $ws->on("error", function (\Exception $ex) use ($pingTimer) {
+                    $ws->on('error', function (\Exception $ex) use ($pingTimer) {
                         $pingTimer->cancel();
                         $this->output->onError($ex);
                     });
-                    $ws->on("close", function ($reason) use ($pingTimer) {
+                    $ws->on('close', function ($reason) use ($pingTimer) {
                         $pingTimer->cancel();
                         if ($this->closeObserver) {
                             $this->closeObserver->onNext($reason);
@@ -98,7 +98,7 @@ final class WebSocketSubject extends Subject
                         $this->output->onError(new \Exception($reason));
                     });
 
-                    $ws->on("message", function ($message) {
+                    $ws->on('message', function ($message) {
 
                         $msg = $this->serializer->deserialize($message);
 
@@ -115,7 +115,7 @@ final class WebSocketSubject extends Subject
                     }
                 },
                 function ($error) {
-                    $error = $error instanceof \Exception ? $error : new RejectedPromiseException($error);
+                    $error = $error instanceof \Exception ? $error : new \Exception($error);
                     $this->output->onError($error);
                 });
 

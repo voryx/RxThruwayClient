@@ -24,23 +24,23 @@ class RegisterObservableTest extends FunctionalTestCase
 
     public function callableObs($first = 0, $second = 0)
     {
-        return Observable::just($first + $second);
+        return Observable::just($first + $second, $this->scheduler);
     }
 
     public function callableManyObs($first = 0, $second = 0)
     {
-        return Observable::fromArray([$first, $second]);
+        return Observable::fromArray([$first, $second], $this->scheduler);
     }
 
     /**
      * @test
      */
-    function register_message_never()
+    public function register_message_never()
     {
         $messages = Observable::never();
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (RegisterMessage $msg) {
+        $webSocket->subscribe(function (RegisterMessage $msg) {
             $this->assertEquals($msg->getUri(), 'testing.uri');
         });
 
@@ -54,7 +54,7 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_messages_empty()
+    public function register_messages_empty()
     {
         $messages = $this->createHotObservable([
             onNext(150, 1),
@@ -62,7 +62,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (RegisterMessage $msg) {
+        $webSocket->subscribe(function (RegisterMessage $msg) {
             $this->assertEquals($msg->getUri(), 'testing.uri');
         });
 
@@ -82,12 +82,12 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_no_invocation()
+    public function register_with_no_invocation()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -122,12 +122,12 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_no_invocation_no_complete()
+    public function register_with_no_invocation_no_complete()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -159,13 +159,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_one_invocation_no_args()
+    public function register_with_one_invocation_no_args()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -182,7 +182,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket);
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -201,13 +201,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_reconnect()
+    public function register_reconnect()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -226,7 +226,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket);
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -245,13 +245,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_many_invocations_no_args()
+    public function register_with_many_invocations_no_args()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -271,7 +271,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket);
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -293,13 +293,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_one_invocation_with_one_arg()
+    public function register_with_one_invocation_with_one_arg()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1]);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -316,7 +316,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket);
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -335,13 +335,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_one_invocation_with_two_arg()
+    public function register_with_one_invocation_with_two_arg()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1, 2]);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -358,7 +358,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket);
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -377,13 +377,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_one_invocation_with_two_arg_obs()
+    public function register_with_one_invocation_with_two_arg_obs()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass(), [1, 2]);
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -400,7 +400,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callableObs'], $messages, $webSocket);
+            return new RegisterObservable('testing.uri', [$this, 'callableObs'], $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -423,13 +423,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_callback_throws()
+    public function register_callback_throws()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -448,7 +448,7 @@ class RegisterObservableTest extends FunctionalTestCase
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
             return new RegisterObservable('testing.uri', function () {
                 throw new \Exception('error');
-            }, $messages, $webSocket);
+            }, $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -467,13 +467,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_callback_throws_multiple()
+    public function register_callback_throws_multiple()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -495,7 +495,7 @@ class RegisterObservableTest extends FunctionalTestCase
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
             return new RegisterObservable('testing.uri', function () {
                 throw new \Exception('error');
-            }, $messages, $webSocket);
+            }, $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -517,13 +517,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_callback_errors()
+    public function register_callback_errors()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -541,8 +541,8 @@ class RegisterObservableTest extends FunctionalTestCase
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
             return new RegisterObservable('testing.uri', function () {
-                return Observable::error(new \Exception('error'));
-            }, $messages, $webSocket);
+                return Observable::error(new \Exception('error'), $this->scheduler);
+            }, $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -561,13 +561,13 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_callback_errors_multiple()
+    public function register_callback_errors_multiple()
     {
         $registeredMsg = new RegisteredMessage(null, 54321);
         $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($registeredMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $registeredMsg->setRequestId($requestId);
@@ -588,8 +588,8 @@ class RegisterObservableTest extends FunctionalTestCase
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
             return new RegisterObservable('testing.uri', function () {
-                return Observable::error(new \Exception('error'));
-            }, $messages, $webSocket);
+                return Observable::error(new \Exception('error'), $this->scheduler);
+            }, $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([
@@ -611,12 +611,12 @@ class RegisterObservableTest extends FunctionalTestCase
     /**
      * @test
      */
-    function register_with_registration_error()
+    public function register_with_registration_error()
     {
         $errorMsg = new ErrorMessage(null, 54321, new \stdClass(), "registration.error.uri");
 
         $webSocket = new Subject();
-        $webSocket->subscribeCallback(function (Message $msg) use ($errorMsg) {
+        $webSocket->subscribe(function (Message $msg) use ($errorMsg) {
             if ($msg instanceof RegisterMessage) {
                 $requestId = $msg->getRequestId();
                 $errorMsg->setErrorRequestId($requestId);
@@ -633,7 +633,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket);
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
         });
 
         $this->assertMessages([

@@ -2,11 +2,11 @@
 
 namespace Rx\Thruway;
 
+use Rx\Observer\CallbackObserver;
+use Rx\Scheduler;
 use Rx\Thruway\Subject\SessionReplaySubject;
 use Rx\Thruway\Subject\WebSocketSubject;
 use Rx\Disposable\CompositeDisposable;
-use Rx\Scheduler\EventLoopScheduler;
-use React\EventLoop\LoopInterface;
 use Rx\DisposableInterface;
 use Thruway\Common\Utils;
 use Rx\Subject\Subject;
@@ -20,38 +20,31 @@ use Thruway\Message\{
 
 final class Client
 {
-
-    private $url, $loop, $realm, $session, $options, $messages, $webSocket, $scheduler, $disposable, $challengeCallback;
+    private $session, $messages, $webSocket, $disposable, $challengeCallback;
 
     private $currentRetryCount = 0;
 
-    public function __construct(string $url, string $realm, array $options = [], LoopInterface $loop = null, Subject $webSocket = null, Observable $messages = null, Observable $session = null)
+    public function __construct(string $url, string $realm, array $options = [], Subject $webSocket = null, Observable $messages = null, Observable $session = null)
     {
-        $this->url               = $url;
-        $this->realm             = $realm;
-        $this->options           = $options;
-        $this->loop              = $loop ?? \EventLoop\getLoop();
-        $this->scheduler         = new EventLoopScheduler($this->loop);
-        $this->disposable        = new CompositeDisposable();
-        $this->challengeCallback = function () {
+        $this->disposable = new CompositeDisposable();
 
+        $this->challengeCallback = function () {
         };
 
         $open  = new Subject();
         $close = new Subject();
 
         $this->webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
-
-        $this->messages = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
+        $this->messages  = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
 
         $open
-            ->doOnNext(function(){
+            ->doOnNext(function () {
                 $this->currentRetryCount = 0;
             })
-            ->map(function () {
-            $this->options['roles'] = $this->roles();
-            return new HelloMessage($this->realm, (object)$this->options);
-        })->subscribe($this->webSocket, $this->scheduler);
+            ->map(function () use ($realm, $options) {
+                $options['roles'] = $this->roles();
+                return new HelloMessage($realm, (object)$options);
+            })->subscribe($this->webSocket);
 
         $challengeMsg = $this->messages
             ->filter(function (Message $msg) {
@@ -69,20 +62,20 @@ final class Client
             ->map(function ($signature) {
                 return new AuthenticateMessage($signature);
             })
-            ->catchError(function (\Exception $ex) {
+            ->catch(function (\Exception $ex) {
                 if ($ex instanceof WampChallengeException) {
                     return Observable::just($ex->getErrorMessage());
                 }
                 return Observable::error($ex);
             })
-            ->doOnEach($this->webSocket);
+            ->do($this->webSocket);
 
         $this->session = $session ?: $this->messages
             ->merge($challengeMsg)
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
-            ->multicast(new SessionReplaySubject($close))->refCount();
+            ->multicast(new SessionReplaySubject($close, Scheduler::getAsync()))->refCount();
 
         $this->disposable->add($this->webSocket);
     }
@@ -94,12 +87,12 @@ final class Client
      * @param array $options
      * @return Observable
      */
-    public function call(string $uri, array $args = [], array $argskw = [], array $options = null) :Observable
+    public function call(string $uri, array $args = [], array $argskw = [], array $options = null): Observable
     {
         return $this->session
             ->take(1)
             ->mapTo(new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options))
-            ->switchLatest();
+            ->switch();
     }
 
     /**
@@ -108,7 +101,7 @@ final class Client
      * @param array $options
      * @return Observable
      */
-    public function register(string $uri, callable $callback, array $options = []) :Observable
+    public function register(string $uri, callable $callback, array $options = []): Observable
     {
         return $this->registerExtended($uri, $callback, $options, false);
     }
@@ -123,7 +116,7 @@ final class Client
      * @param array $options
      * @return Observable
      */
-    public function progressiveCall(string $uri, array $args = [], array $argskw = [], array $options = null) :Observable
+    public function progressiveCall(string $uri, array $args = [], array $argskw = [], array $options = null): Observable
     {
         $options['receive_progress'] = true;
 
@@ -135,7 +128,7 @@ final class Client
             ->mapTo($callObs->doOnCompleted(function () use ($completed) {
                 $completed->onNext(0);
             }))
-            ->switchLatest();
+            ->switch();
     }
 
     /**
@@ -144,7 +137,7 @@ final class Client
      * @param array $options
      * @return Observable
      */
-    public function progressiveRegister(string $uri, callable $callback, array $options = []) :Observable
+    public function progressiveRegister(string $uri, callable $callback, array $options = []): Observable
     {
         $options['progress'] = true;
 
@@ -160,11 +153,11 @@ final class Client
      * @param bool $extended
      * @return Observable
      */
-    public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true) :Observable
+    public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true): Observable
     {
         return $this->session
             ->mapTo(new RegisterObservable($uri, $callback, $this->messages, $this->webSocket, $options, $extended))
-            ->switchLatest();
+            ->switch();
     }
 
     /**
@@ -172,12 +165,11 @@ final class Client
      * @param array $options
      * @return Observable
      */
-    public function topic(string $uri, array $options = []) :Observable
+    public function topic(string $uri, array $options = []): Observable
     {
         return $this->session
             ->mapTo(new TopicObservable($uri, $options, $this->messages, $this->webSocket))
-            ->switchLatest()
-            ->subscribeOn($this->scheduler);
+            ->switch();
     }
 
     /**
@@ -185,8 +177,9 @@ final class Client
      * @param mixed | Observable $obs
      * @param array $options
      * @return DisposableInterface
+     * @throws \InvalidArgumentException
      */
-    public function publish(string $uri, $obs, array $options = []) : DisposableInterface
+    public function publish(string $uri, $obs, array $options = []): DisposableInterface
     {
         $obs = $obs instanceof Observable ? $obs : Observable::just($obs);
 
@@ -197,13 +190,11 @@ final class Client
             ->mapTo($obs->doOnCompleted(function () use ($completed) {
                 $completed->onNext(0);
             }))
-            ->lift(function () {
-                return new SwitchFirstOperator();
-            })
+            ->switchFirst()
             ->map(function ($value) use ($uri, $options) {
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
-            ->subscribe($this->webSocket, $this->scheduler);
+            ->subscribe($this->webSocket);
     }
 
     public function onChallenge(callable $challengeCallback)
@@ -227,8 +218,8 @@ final class Client
             ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
                 $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
                 $seconds = number_format((float)$delay / 1000, 3, '.', '');;
-                echo "Error: ", $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
-                return Observable::timer((int)$delay, $this->scheduler);
+                echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
+                return Observable::timer((int)$delay);
             })
             ->take($maxRetries);
     }
@@ -236,34 +227,34 @@ final class Client
     private function roles()
     {
         return [
-            "caller"     => [
-                "features" => [
-                    "caller_identification"    => true,
-                    "progressive_call_results" => true
+            'caller'     => [
+                'features' => [
+                    'caller_identification'    => true,
+                    'progressive_call_results' => true
                 ]
             ],
-            "callee"     => [
-                "features" => [
-                    "call_canceling"             => true,
-                    "caller_identification"      => true,
-                    "pattern_based_registration" => true,
-                    "shared_registration"        => true,
-                    "progressive_call_results"   => true,
-                    "registration_revocation"    => true
+            'callee'     => [
+                'features' => [
+                    'call_canceling'             => true,
+                    'caller_identification'      => true,
+                    'pattern_based_registration' => true,
+                    'shared_registration'        => true,
+                    'progressive_call_results'   => true,
+                    'registration_revocation'    => true
                 ]
             ],
-            "publisher"  => [
-                "features" => [
-                    "publisher_identification"      => true,
-                    "subscriber_blackwhite_listing" => true,
-                    "publisher_exclusion"           => true
+            'publisher'  => [
+                'features' => [
+                    'publisher_identification'      => true,
+                    'subscriber_blackwhite_listing' => true,
+                    'publisher_exclusion'           => true
                 ]
             ],
-            "subscriber" => [
-                "features" => [
-                    "publisher_identification"   => true,
-                    "pattern_based_subscription" => true,
-                    "subscription_revocation"    => true
+            'subscriber' => [
+                'features' => [
+                    'publisher_identification'   => true,
+                    'pattern_based_subscription' => true,
+                    'subscription_revocation'    => true
                 ]
             ]
         ];

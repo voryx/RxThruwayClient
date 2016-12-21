@@ -2,8 +2,11 @@
 
 namespace Rx\Thruway\Observable;
 
+use Rx\DisposableInterface;
 use Rx\Observable;
 use Rx\ObserverInterface;
+use Rx\Scheduler;
+use Rx\SchedulerInterface;
 use Rx\Subject\Subject;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
@@ -16,9 +19,9 @@ use Thruway\Message\{
 
 final class RegisterObservable extends Observable
 {
-    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject, $invocationErrors;
+    private $uri, $options, $messages, $ws, $callback, $extended, $logSubject, $invocationErrors, $scheduler;
 
-    function __construct(string $uri, callable $callback, Observable $messages, Subject $ws, array $options = [], bool $extended = false, Subject $logSubject = null)
+    public function __construct(string $uri, callable $callback, Observable $messages, Subject $ws, array $options = [], bool $extended = false, Subject $logSubject = null, SchedulerInterface $scheduler = null)
     {
         $this->uri              = $uri;
         $this->options          = $options;
@@ -28,9 +31,10 @@ final class RegisterObservable extends Observable
         $this->extended         = $extended;
         $this->logSubject       = $logSubject ?: new Subject();
         $this->invocationErrors = new Subject();
+        $this->scheduler        = $scheduler ?: Scheduler::getDefault();
     }
 
-    public function subscribe(ObserverInterface $observer, $scheduler = null)
+    public function _subscribe(ObserverInterface $observer): DisposableInterface
     {
         $requestId      = Utils::getUniqueId();
         $disposable     = new CompositeDisposable();
@@ -65,7 +69,7 @@ final class RegisterObservable extends Observable
                 return $msg instanceof ErrorMessage && $msg->getErrorRequestId() === $requestId;
             })
             ->flatMap(function (ErrorMessage $msg) {
-                return Observable::error(new WampErrorException($msg->getErrorURI(), $msg->getArguments()));
+                return Observable::error(new WampErrorException($msg->getErrorURI(), $msg->getArguments()), $this->scheduler);
             })
             ->takeUntil($registeredMsg)
             ->take(1);
@@ -91,7 +95,7 @@ final class RegisterObservable extends Observable
                     $completed = true;
                     $observer->onCompleted();
                 }
-            ), $scheduler);
+            ));
 
         $invocationSubscription = $invocationMsg
             ->flatMap(function (InvocationMessage $msg) {
@@ -104,10 +108,10 @@ final class RegisterObservable extends Observable
                     }
                 } catch (\Exception $e) {
                     $this->invocationErrors->onNext(new WampInvocationException($msg));
-                    return Observable::emptyObservable();
+                    return Observable::emptyObservable($this->scheduler);
                 }
 
-                $resultObs = $result instanceof Observable ? $result : Observable::just($result);
+                $resultObs = $result instanceof Observable ? $result : Observable::just($result, $this->scheduler);
 
                 if (($this->options['progress'] ?? false) === false) {
                     $returnObs = $resultObs
@@ -121,7 +125,7 @@ final class RegisterObservable extends Observable
                         ->map(function ($value) use ($msg) {
                             return [$value, $msg, $this->options];
                         })
-                        ->concat(Observable::just([null, $msg, ["progress" => false]]));
+                        ->concat(Observable::just([null, $msg, ["progress" => false]], $this->scheduler));
                 }
 
                 $interruptMsg = $this->messages
@@ -134,7 +138,7 @@ final class RegisterObservable extends Observable
                     ->takeUntil($interruptMsg)
                     ->catchError(function (\Exception $ex) use ($msg) {
                         $this->invocationErrors->onNext(new WampInvocationException($msg));
-                        return Observable::emptyObservable();
+                        return Observable::emptyObservable($this->scheduler);
                     });
 
             })
@@ -144,13 +148,13 @@ final class RegisterObservable extends Observable
 
                 return new YieldMessage($invocationMsg->getRequestId(), $options, [$value]);
             })
-            ->subscribe($this->ws, $scheduler);
+            ->subscribe($this->ws);
 
         $invocationErrors = $this->invocationErrors
             ->map(function (WampInvocationException $error) {
                 return $error->getErrorMessage();
             })
-            ->subscribe($this->ws, $scheduler);
+            ->subscribe($this->ws);
 
         $disposable->add($invocationErrors);
         $disposable->add($invocationSubscription);

@@ -2,6 +2,7 @@
 
 namespace Rx\Thruway\Observable;
 
+use Rx\DisposableInterface;
 use Rx\Observable;
 use Rx\Subject\Subject;
 use Thruway\Common\Utils;
@@ -17,15 +18,15 @@ final class TopicObservable extends Observable
 {
     private $uri, $options, $messages, $webSocket;
 
-    function __construct(string $uri, array $options, Observable $messages, Subject $webSocket)
+    public function __construct(string $uri, array $options, Observable $messages, Subject $webSocket)
     {
-        $this->uri         = $uri;
-        $this->options     = (object)$options;
-        $this->messages    = $messages;
+        $this->uri       = $uri;
+        $this->options   = (object)$options;
+        $this->messages  = $messages;
         $this->webSocket = $webSocket;
     }
 
-    public function subscribe(ObserverInterface $observer, $scheduler = null)
+    public function _subscribe(ObserverInterface $observer): DisposableInterface
     {
         $requestId      = Utils::getUniqueId();
         $subscriptionId = null;
@@ -60,13 +61,13 @@ final class TopicObservable extends Observable
                     });
             })
             ->merge($errorMsg)
-            ->subscribe($observer, $scheduler);
+            ->subscribe($observer);
 
         $disposable = new CompositeDisposable();
 
         $disposable->add($sub);
 
-        $disposable->add(new CallbackDisposable(function () use (&$subscriptionId, $scheduler) {
+        $disposable->add(new CallbackDisposable(function () use (&$subscriptionId) {
             if (!$subscriptionId) {
                 return;
             }
