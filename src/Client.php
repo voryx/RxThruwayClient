@@ -224,9 +224,6 @@ final class Client
         $maxRetries        = 150;
 
         return $attempts
-            ->doOnNext(function(){
-
-            })
             ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
                 $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
                 $seconds = number_format((float)$delay / 1000, 3, '.', '');;
