@@ -7,13 +7,13 @@ use React\EventLoop\Timer\Timer;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
 use Rx\DisposableInterface;
-use Rx\Thruway\ReactAsyncInteropLoop;
 use Thruway\Message\AbortMessage;
 use Thruway\Serializer\JsonSerializer;
 use Ratchet\Client\Connector;
 use Ratchet\Client\WebSocket;
 use Rx\ObserverInterface;
 use Rx\Subject\Subject;
+use Voryx\React\AsyncInterop\Loop;
 
 final class WebSocketSubject extends Subject
 {
@@ -27,7 +27,7 @@ final class WebSocketSubject extends Subject
         $this->openObserver  = $openObserver;
         $this->closeObserver = $closeObserver;
         $this->serializer    = new JsonSerializer();
-        $this->loop          = new ReactAsyncInteropLoop();
+        $this->loop          = new Loop();
         $this->output        = new Subject();
     }
 
