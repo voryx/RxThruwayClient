@@ -13,7 +13,7 @@ use Ratchet\Client\Connector;
 use Ratchet\Client\WebSocket;
 use Rx\ObserverInterface;
 use Rx\Subject\Subject;
-use Voryx\React\AsyncInterop\Loop;
+use WyriHaximus\React\AsyncInteropLoop\AsyncInteropLoop;
 
 final class WebSocketSubject extends Subject
 {
@@ -27,7 +27,7 @@ final class WebSocketSubject extends Subject
         $this->openObserver  = $openObserver;
         $this->closeObserver = $closeObserver;
         $this->serializer    = new JsonSerializer();
-        $this->loop          = new Loop();
+        $this->loop          = new AsyncInteropLoop();
         $this->output        = new Subject();
     }
 

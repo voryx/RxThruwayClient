@@ -35,8 +35,7 @@
     "voryx/thruway-common": "^1.0.0",
     "ratchet/pawl": "^0.2.2",
     "wyrihaximus/react-async-interop-loop": "dev-master",
-    "reactivex/rxphp": "2.x-dev",
-    "voryx/pool-poretni-cnysa-tcaer": "^0.0.1"
+    "reactivex/rxphp": "2.x-dev"
   },
   "repositories": [
     {
