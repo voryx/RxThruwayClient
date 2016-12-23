@@ -25,16 +25,13 @@
   "autoload": {
     "psr-4": {
       "Rx\\Thruway\\": "src/"
-    },
-    "files": [
-      "src/bootstrap.php"
-    ]
+    }
   },
   "require": {
     "php": "^7.0",
     "voryx/thruway-common": "^1.0.0",
     "ratchet/pawl": "^0.2.2",
-    "wyrihaximus/react-async-interop-loop": "0.1.0",
+    "voryx/event-loop": "2.0.0",
     "reactivex/rxphp": "2.x-dev"
   },
   "repositories": [
