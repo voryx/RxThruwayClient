@@ -73,7 +73,7 @@ class SessionReplaySubject extends Subject
         }
     }
 
-    private function createRemovableDisposable(Subject $subject, ObserverInterface $observer): DisposableInterface
+    private function createRemovableDisposable(Subject $subject, ScheduledObserver $observer): DisposableInterface
     {
         return new CallbackDisposable(function () use ($observer, $subject) {
             $observer->dispose();

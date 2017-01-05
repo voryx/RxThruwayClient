@@ -31,17 +31,13 @@
     "php": "^7.0",
     "voryx/thruway-common": "^1.0.0",
     "ratchet/pawl": "^0.2.2",
-    "voryx/event-loop": "2.0.0",
+    "voryx/event-loop": "^2.0.1",
     "reactivex/rxphp": "2.x-dev"
   },
   "repositories": [
     {
       "type": "vcs",
       "url": "git@github.com:voryx/ThruwayCommon.git"
-    },
-    {
-      "type": "vcs",
-      "url": "https://github.com/davidwdan/RxPHP.git"
     }
   ],
   "extra": {
