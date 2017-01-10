@@ -27,6 +27,14 @@
       "Rx\\Thruway\\": "src/"
     }
   },
+  "autoload-dev": {
+    "psr-4": {
+      "Rx\\": "vendor/reactivex/rxphp/test/Rx"
+    },
+    "files": [
+      "vendor/reactivex/rxphp/test/helper-functions.php"
+    ]
+  },
   "require": {
     "php": "^7.0",
     "voryx/thruway-common": "^1.0.0",

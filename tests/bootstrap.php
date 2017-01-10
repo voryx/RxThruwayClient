@@ -21,18 +21,6 @@ foreach ($locations as $location) {
     }
 }
 
-
-//RxPHP test files
-foreach ($locations as $location) {
-
-    $file = $location . "vendor/reactivex/rxphp/test/helper-functions.php";
-    if (file_exists($file)) {
-        $loader->add('Rx', $location . "vendor/reactivex/rxphp/test/");
-        require_once $file;
-        break;
-    }
-}
-
 /**
  * The default scheduler is the EventLoopScheduler, which is asynchronous.
  * For testing we need to block at `subscribe`, so we need to switch the default to the ImmediateScheduler.
