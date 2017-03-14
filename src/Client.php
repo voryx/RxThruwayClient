@@ -2,7 +2,6 @@
 
 namespace Rx\Thruway;
 
-use Rx\Observer\CallbackObserver;
 use Rx\Scheduler;
 use Rx\Thruway\Subject\SessionReplaySubject;
 use Rx\Thruway\Subject\WebSocketSubject;

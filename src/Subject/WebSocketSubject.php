@@ -27,7 +27,7 @@ final class WebSocketSubject extends Subject
         $this->openObserver  = $openObserver;
         $this->closeObserver = $closeObserver;
         $this->serializer    = new JsonSerializer();
-        $this->loop          = new AsyncInteropLoop();
+        $this->loop          = \EventLoop\getLoop();
         $this->output        = new Subject();
     }
 
