@@ -3,10 +3,10 @@
 namespace Rx\Thruway\Subject;
 
 use Rx\Disposable\CallbackDisposable;
+use Rx\DisposableInterface;
 use Rx\Observable;
 use Rx\Observer\ScheduledObserver;
 use Rx\ObserverInterface;
-use Rx\Scheduler\ImmediateScheduler;
 use Rx\SchedulerInterface;
 use Rx\Subject\Subject;
 
@@ -20,29 +20,26 @@ class SessionReplaySubject extends Subject
 
     private $value;
 
-    public function __construct(Observable $close)
+    public function __construct(Observable $close, SchedulerInterface $scheduler)
     {
-        $this->scheduler  = new ImmediateScheduler();
+        $this->scheduler = $scheduler;
 
-        $close->subscribeCallback(function () {
+        $close->subscribe(function () {
             $this->value = null;
         });
     }
 
-    public function subscribe(ObserverInterface $observer, SchedulerInterface $scheduler = null)
+    public function _subscribe(ObserverInterface $observer): DisposableInterface
     {
         $this->assertNotDisposed();
 
-        if (!$scheduler) {
-            $scheduler = $this->scheduler;
-        }
-        $so = new ScheduledObserver($scheduler, $observer);
+        $so = new ScheduledObserver($this->scheduler, $observer);
 
         $subscription = $this->createRemovableDisposable($this, $so);
 
         $this->observers[] = $so;
 
-        if ($this->value){
+        if ($this->value) {
             $so->onNext($this->value);
         }
 
@@ -76,12 +73,12 @@ class SessionReplaySubject extends Subject
         }
     }
 
-    private function createRemovableDisposable($subject, $observer)
+    private function createRemovableDisposable(Subject $subject, ScheduledObserver $observer): DisposableInterface
     {
         return new CallbackDisposable(function () use ($observer, $subject) {
             $observer->dispose();
             if (!$subject->isDisposed()) {
-                array_splice($subject->observers, array_search($observer, $subject->observers), 1);
+                array_splice($subject->observers, array_search($observer, $subject->observers, true), 1);
             }
         });
     }

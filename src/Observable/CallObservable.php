@@ -5,6 +5,9 @@ namespace Rx\Thruway\Observable;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
 use Rx\Disposable\EmptyDisposable;
+use Rx\DisposableInterface;
+use Rx\Scheduler;
+use Rx\SchedulerInterface;
 use Thruway\WampErrorException;
 use Rx\ObserverInterface;
 use Thruway\Common\Utils;
@@ -16,10 +19,18 @@ use Thruway\Message\{
 
 final class CallObservable extends Observable
 {
-    private $uri, $args, $argskw, $options, $messages, $webSocket, $timeout, $completed;
+    private $uri, $args, $argskw, $options, $messages, $webSocket, $timeout, $completed, $scheduler;
 
-    function __construct(string $uri, Observable $messages, Subject $webSocket, array $args = null, array $argskw = null, array $options = null, int $timeout = 300000)
-    {
+    public function __construct(
+        string $uri,
+        Observable $messages,
+        Subject $webSocket,
+        array $args = null,
+        array $argskw = null,
+        array $options = null,
+        int $timeout = 300000,
+        SchedulerInterface $scheduler = null
+    ) {
         $this->uri       = $uri;
         $this->args      = $args;
         $this->argskw    = $argskw;
@@ -28,9 +39,10 @@ final class CallObservable extends Observable
         $this->webSocket = $webSocket;
         $this->timeout   = $timeout;
         $this->completed = false;
+        $this->scheduler = $scheduler ?: Scheduler::getDefault();
     }
 
-    public function subscribe(ObserverInterface $observer, $scheduler = null)
+    public function _subscribe(ObserverInterface $observer): DisposableInterface
     {
         $requestId = Utils::getUniqueId();
         $callMsg   = new CallMessage($requestId, $this->options, $this->uri, $this->args, $this->argskw);
@@ -52,8 +64,8 @@ final class CallObservable extends Observable
 
                     return Observable::fromArray([
                         new ResultMessage($msg->getRequestId(), $details, $msg->getArguments(), $msg->getArgumentsKw()),
-                        new ResultMessage($msg->getRequestId(), (object)["progress" => false])
-                    ]);
+                        new ResultMessage($msg->getRequestId(), (object)['progress' => false])
+                    ], $this->scheduler);
                 }
                 return Observable::just($msg);
             })
@@ -70,7 +82,7 @@ final class CallObservable extends Observable
                 return $msg instanceof ErrorMessage && $msg->getErrorRequestId() === $requestId;
             })
             ->flatMap(function (ErrorMessage $msg) {
-                return Observable::error(new WampErrorException($msg->getErrorURI(), $msg->getArguments()));
+                return Observable::error(new WampErrorException($msg->getErrorURI(), $msg->getArguments()), $this->scheduler);
             })
             ->takeUntil($resultMsg)
             ->take(1);
@@ -101,7 +113,7 @@ final class CallObservable extends Observable
                 }
             }),
 
-            $result->subscribe($observer, $scheduler)
+            $result->subscribe($observer)
         ]);
     }
 }

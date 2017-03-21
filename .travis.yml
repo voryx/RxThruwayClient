@@ -3,9 +3,10 @@ sudo: required
 
 php:
   - 7
+  - 7.1
 
 install:
   - composer install
 
 script:
-  - phpunit
+  - vendor/bin/phpunit

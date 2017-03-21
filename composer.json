@@ -27,17 +27,34 @@
       "Rx\\Thruway\\": "src/"
     }
   },
+  "autoload-dev": {
+    "psr-4": {
+      "Rx\\Thruway\\Tests\\": "tests/",
+      "Rx\\": "vendor/reactivex/rxphp/test/Rx"
+    },
+    "files": [
+      "vendor/reactivex/rxphp/test/helper-functions.php"
+    ]
+  },
   "require": {
-    "reactivex/rxphp": "^1.4.1",
-    "voryx/thruway-common": "^1.0.0",
     "php": "^7.0",
+    "voryx/thruway-common": "^1.0.0",
     "ratchet/pawl": "^0.2.2",
-    "voryx/event-loop": "^0.2.0"
+    "voryx/event-loop": "^2.0.1",
+    "reactivex/rxphp": "^2.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^5.5"
   },
   "repositories": [
     {
       "type": "vcs",
       "url": "git@github.com:voryx/ThruwayCommon.git"
     }
-  ]
+  ],
+  "extra": {
+    "branch-alias": {
+      "dev-master": "2.0-dev"
+    }
+  }
 }
