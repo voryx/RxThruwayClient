@@ -1,24 +1,9 @@
 <?php
-/**
- * Find the auto loader file
- */
-$locations = [
-    __DIR__ . '/../',
-    __DIR__ . '/../../',
-    __DIR__ . '/../../../',
-    __DIR__ . '/../../../../',
-];
 
-
-foreach ($locations as $location) {
-
-    $file = $location . "vendor/autoload.php";
-
-    if (file_exists($file)) {
-        $loader = require_once $file;
-        $loader->addPsr4('Rx\\Thruway\\Tests\\', __DIR__);
-        break;
-    }
+if (file_exists($file = __DIR__ . '/../vendor/autoload.php')) {
+    require $file;
+} else {
+    throw new RuntimeException('Install dependencies to run test suite.');
 }
 
 /**
