@@ -29,6 +29,7 @@
   },
   "autoload-dev": {
     "psr-4": {
+      "Rx\\Thruway\\Tests\\": "tests/",
       "Rx\\": "vendor/reactivex/rxphp/test/Rx"
     },
     "files": [
