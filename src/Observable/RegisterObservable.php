@@ -106,12 +106,12 @@ final class RegisterObservable extends Observable
                     } else {
                         $result = call_user_func_array($this->callback, $msg->getArguments());
                     }
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
                     $this->invocationErrors->onNext(new WampInvocationException($msg));
-                    return Observable::emptyObservable($this->scheduler);
+                    return Observable::empty($this->scheduler);
                 }
 
-                $resultObs = $result instanceof Observable ? $result : Observable::just($result, $this->scheduler);
+                $resultObs = $result instanceof Observable ? $result : Observable::of($result, $this->scheduler);
 
                 if (($this->options['progress'] ?? false) === false) {
                     $returnObs = $resultObs
@@ -125,7 +125,7 @@ final class RegisterObservable extends Observable
                         ->map(function ($value) use ($msg) {
                             return [$value, $msg, $this->options];
                         })
-                        ->concat(Observable::just([null, $msg, ["progress" => false]], $this->scheduler));
+                        ->concat(Observable::of([null, $msg, ["progress" => false]], $this->scheduler));
                 }
 
                 $interruptMsg = $this->messages
@@ -136,9 +136,9 @@ final class RegisterObservable extends Observable
 
                 return $returnObs
                     ->takeUntil($interruptMsg)
-                    ->catchError(function (\Exception $ex) use ($msg) {
+                    ->catch(function (\Throwable $ex) use ($msg) {
                         $this->invocationErrors->onNext(new WampInvocationException($msg));
-                        return Observable::emptyObservable($this->scheduler);
+                        return Observable::empty($this->scheduler);
                     });
 
             })

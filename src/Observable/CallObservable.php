@@ -67,7 +67,7 @@ final class CallObservable extends Observable
                         new ResultMessage($msg->getRequestId(), (object)['progress' => false])
                     ], $this->scheduler);
                 }
-                return Observable::just($msg);
+                return Observable::of($msg);
             })
             ->share();
 
