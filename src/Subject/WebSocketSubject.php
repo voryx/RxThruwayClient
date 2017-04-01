@@ -13,7 +13,6 @@ use Ratchet\Client\Connector;
 use Ratchet\Client\WebSocket;
 use Rx\ObserverInterface;
 use Rx\Subject\Subject;
-use WyriHaximus\React\AsyncInteropLoop\AsyncInteropLoop;
 
 final class WebSocketSubject extends Subject
 {
@@ -63,18 +62,22 @@ final class WebSocketSubject extends Subject
                     $this->socket = $ws;
 
                     $lastReceivedPong = 0;
-                    $pingTimer        = $this->loop->addPeriodicTimer(30, function (Timer $timer) use ($ws, &$lastReceivedPong) {
+
+                    $pingTimer = $this->loop->addPeriodicTimer(30, function (Timer $timer) use (&$lastReceivedPong) {
                         static $sequence = 0;
 
                         if ((int)$lastReceivedPong !== (int)$sequence) {
                             $timer->cancel();
-                            $ws->close();
+                            if ($this->socket) {
+                                $this->socket->close();
+                            }
                         }
 
                         $sequence++;
                         $frame = new Frame($sequence, true, Frame::OP_PING);
-                        $ws->send($frame);
-
+                        if ($this->socket) {
+                            $this->socket->send($frame);
+                        }
                     });
 
                     $ws->on('pong', function (Frame $frame) use (&$lastReceivedPong) {
