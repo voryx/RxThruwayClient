@@ -2,11 +2,9 @@
 
 namespace Rx\Thruway;
 
-use Rx\Scheduler;
-use Rx\Thruway\Subject\SessionReplaySubject;
-use Rx\Thruway\Subject\WebSocketSubject;
 use Rx\Disposable\CompositeDisposable;
 use Rx\DisposableInterface;
+use Rx\Websocket\MessageSubject;
 use Thruway\Common\Utils;
 use Rx\Subject\Subject;
 use Rx\Observable;
@@ -16,34 +14,43 @@ use Rx\Thruway\Observable\{
 use Thruway\Message\{
     AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
+use Thruway\Serializer\JsonSerializer;
 
 final class Client
 {
-    private $session, $messages, $webSocket, $disposable, $challengeCallback;
+    private $session, $messages, $sendMessage, $disposable, $challengeCallback;
 
     private $currentRetryCount = 0;
 
     public function __construct(string $url, string $realm, array $options = [], Subject $webSocket = null, Observable $messages = null, Observable $session = null)
     {
         $this->disposable = new CompositeDisposable();
+        $serializer       = new JsonSerializer();
 
         $this->challengeCallback = function () {
         };
 
-        $open  = new Subject();
-        $close = new Subject();
+        $ws = (new \Rx\Websocket\Client($url, false, ['wamp.2.json']))
+            ->retryWhen([$this, '_retry'])
+            ->repeatWhen([$this, '_repeat'])
+            ->compose(function ($source) {
+                return new SingleInstanceObservable($source);
+            });
 
-        $this->webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
-        $this->messages  = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
+        $this->sendMessage = $webSocket ?: new Subject();
 
-        $open
-            ->doOnNext(function () {
-                $this->currentRetryCount = 0;
-            })
-            ->map(function () use ($realm, $options) {
-                $options['roles'] = $this->roles();
-                return new HelloMessage($realm, (object)$options);
-            })->subscribe($this->webSocket);
+        $this->messages = $ws
+            ->switch()
+            ->map([$serializer, 'deserialize'])
+            ->share();
+
+        //Send Hello message
+        $s1 = $ws->subscribe(function (MessageSubject $ms) use ($realm, $serializer) {
+            $this->currentRetryCount = 0;
+
+            $options['roles'] = $this->roles();
+            $ms->onNext($serializer->serialize(new HelloMessage($realm, (object)$options)));
+        });
 
         $challengeMsg = $this->messages
             ->filter(function (Message $msg) {
@@ -52,7 +59,7 @@ final class Client
             ->flatMapLatest(function (ChallengeMessage $msg) {
                 $challengeResult = null;
                 try {
-                    $challengeResult = call_user_func($this->challengeCallback, Observable::just([$msg->getAuthMethod(), $msg->getDetails()]));
+                    $challengeResult = call_user_func($this->challengeCallback, Observable::of([$msg->getAuthMethod(), $msg->getDetails()]));
                 } catch (\Exception $e) {
                     throw new WampChallengeException($msg);
                 }
@@ -63,20 +70,33 @@ final class Client
             })
             ->catch(function (\Exception $ex) {
                 if ($ex instanceof WampChallengeException) {
-                    return Observable::just($ex->getErrorMessage());
+                    return Observable::of($ex->getErrorMessage());
                 }
                 return Observable::error($ex);
             })
-            ->do($this->webSocket);
+            ->do([$this->sendMessage, 'onNext']);
 
-        $this->session = $session ?: $this->messages
+        $this->session = $this->messages
             ->merge($challengeMsg)
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
-            ->multicast(new SessionReplaySubject($close, Scheduler::getAsync()))->refCount();
+            ->shareReplay(1);
 
-        $this->disposable->add($this->webSocket);
+        $s2 = $this->sendMessage
+            ->map([$serializer, 'serialize'])
+            ->lift(function () use ($ws) {
+                return new WithLatestFromOperator([$ws, $this->session]);
+            })
+            ->subscribe(function ($args) {
+                /** @var MessageSubject $ms */
+                /** @var Message $msg */
+                list($msg, $ms) = $args;
+                $ms->send($msg);
+            });
+
+        $this->disposable->add($s1);
+        $this->disposable->add($s2);
     }
 
     /**
@@ -90,7 +110,7 @@ final class Client
     {
         return $this->session
             ->take(1)
-            ->mapTo(new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options))
+            ->mapTo(new CallObservable($uri, $this->messages, $this->sendMessage, $args, $argskw, $options))
             ->switch();
     }
 
@@ -120,7 +140,7 @@ final class Client
         $options['receive_progress'] = true;
 
         $completed = new Subject();
-        $callObs   = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
+        $callObs   = new CallObservable($uri, $this->messages, $this->sendMessage, $args, $argskw, $options);
 
         return $this->session
             ->takeUntil($completed)
@@ -155,7 +175,7 @@ final class Client
     public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true): Observable
     {
         return $this->session
-            ->mapTo(new RegisterObservable($uri, $callback, $this->messages, $this->webSocket, $options, $extended))
+            ->mapTo(new RegisterObservable($uri, $callback, $this->messages, $this->sendMessage, $options, $extended))
             ->switch();
     }
 
@@ -167,7 +187,7 @@ final class Client
     public function topic(string $uri, array $options = []): Observable
     {
         return $this->session
-            ->mapTo(new TopicObservable($uri, $options, $this->messages, $this->webSocket))
+            ->mapTo(new TopicObservable($uri, $options, $this->messages, $this->sendMessage))
             ->switch();
     }
 
@@ -180,7 +200,7 @@ final class Client
      */
     public function publish(string $uri, $obs, array $options = []): DisposableInterface
     {
-        $obs = $obs instanceof Observable ? $obs : Observable::just($obs);
+        $obs = $obs instanceof Observable ? $obs : Observable::of($obs);
 
         $completed = new Subject();
 
@@ -193,7 +213,7 @@ final class Client
             ->map(function ($value) use ($uri, $options) {
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
-            ->subscribe($this->webSocket);
+            ->subscribe([$this->sendMessage, 'onNext']);
     }
 
     public function onChallenge(callable $challengeCallback)
@@ -206,7 +226,24 @@ final class Client
         $this->disposable->dispose();
     }
 
-    public function _reconnect(Observable $attempts)
+    public function _retry(Observable $errors)
+    {
+        $maxRetryDelay     = 150000;
+        $initialRetryDelay = 1500;
+        $retryDelayGrowth  = 1.5;
+        $maxRetries        = 150;
+
+        return $errors
+            ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
+                $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
+                $seconds = number_format((float)$delay / 1000, 3, '.', '');
+                echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL, PHP_EOL;
+                return Observable::timer((int)$delay);
+            })
+            ->take($maxRetries);
+    }
+
+    public function _repeat(Observable $attempts)
     {
         $maxRetryDelay     = 150000;
         $initialRetryDelay = 1500;
@@ -214,10 +251,10 @@ final class Client
         $maxRetries        = 150;
 
         return $attempts
-            ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
+            ->flatMap(function () use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
                 $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
-                $seconds = number_format((float)$delay / 1000, 3, '.', '');;
-                echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
+                $seconds = number_format((float)$delay / 1000, 3, '.', '');
+                echo 'Websocket Closed', PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL, PHP_EOL;
                 return Observable::timer((int)$delay);
             })
             ->take($maxRetries);
