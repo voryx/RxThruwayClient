@@ -40,17 +40,15 @@ final class Client
         $this->sendMessage = $webSocket ?: new Subject();
 
         $this->messages = $ws
+            ->do(function (MessageSubject $ms) use ($realm, $serializer) {
+                $this->currentRetryCount = 0;
+
+                $options['roles'] = $this->roles();
+                $ms->onNext($serializer->serialize(new HelloMessage($realm, (object)$options)));
+            })
             ->switch()
             ->map([$serializer, 'deserialize'])
             ->share();
-
-        //Send Hello message
-        $s1 = $ws->subscribe(function (MessageSubject $ms) use ($realm, $serializer) {
-            $this->currentRetryCount = 0;
-
-            $options['roles'] = $this->roles();
-            $ms->onNext($serializer->serialize(new HelloMessage($realm, (object)$options)));
-        });
 
         $challengeMsg = $this->messages
             ->filter(function (Message $msg) {
@@ -83,7 +81,7 @@ final class Client
             })
             ->shareReplay(1);
 
-        $s2 = $this->sendMessage
+        $s1 = $this->sendMessage
             ->map([$serializer, 'serialize'])
             ->lift(function () use ($ws) {
                 return new WithLatestFromOperator([$ws, $this->session]);
@@ -96,7 +94,6 @@ final class Client
             });
 
         $this->disposable->add($s1);
-        $this->disposable->add($s2);
     }
 
     /**
