@@ -107,7 +107,7 @@ final class CallObservable extends Observable
 
         return new CompositeDisposable([
             new CallbackDisposable(function () use ($requestId) {
-                Scheduler::getAsync()->schedule(function () use ($requestId) {
+                $this->scheduler->schedule(function () use ($requestId) {
                     if (!$this->completed) {
                         $cancelMsg = new CancelMessage($requestId, (object)[]);
                         $this->webSocket->onNext($cancelMsg);
