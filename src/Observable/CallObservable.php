@@ -72,10 +72,14 @@ final class CallObservable extends Observable
             ->share();
 
         //Take until we get a result without progress
-        $resultMsg = $msg->takeWhile(function (ResultMessage $msg) {
-            $details = $msg->getDetails();
-            return (bool)($details->progress ?? false);
-        });
+        $resultMsg = $msg
+            ->finally(function () {
+                $this->completed = true;
+            })
+            ->takeWhile(function (ResultMessage $msg) {
+                $details = $msg->getDetails();
+                return (bool)($details->progress ?? false);
+            });
 
         $error = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
@@ -100,19 +104,14 @@ final class CallObservable extends Observable
                 $details = $msg->getDetails();
                 unset($details->progress);
                 return [$msg->getArguments(), $msg->getArgumentsKw(), $details];
-            })
-            ->finally(function () {
-                $this->completed = true;
             });
 
         return new CompositeDisposable([
             new CallbackDisposable(function () use ($requestId) {
-                $this->scheduler->schedule(function () use ($requestId) {
-                    if (!$this->completed) {
-                        $cancelMsg = new CancelMessage($requestId, (object)[]);
-                        $this->webSocket->onNext($cancelMsg);
-                    }
-                });
+                if (!$this->completed) {
+                    $cancelMsg = new CancelMessage($requestId, (object)[]);
+                    $this->webSocket->onNext($cancelMsg);
+                }
             }),
             $result->subscribe($observer)
         ]);
