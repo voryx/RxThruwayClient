@@ -271,8 +271,7 @@ class CallObservableTest extends FunctionalTestCase
         ], $results->getMessages());
 
         $this->assertWampMessages([
-            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
-            [1000, '[49,12345,{}]'] //CancelMessage
+            [200, '[48,12345,{},"testing.uri"]'] //CallMessage
         ], $this->getWampMessages());
     }
 
@@ -315,8 +314,7 @@ class CallObservableTest extends FunctionalTestCase
         ], $results->getMessages());
 
         $this->assertWampMessages([
-            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
-            [1000, '[49,12345,{}]'] //CancelMessage
+            [200, '[48,12345,{},"testing.uri"]'] //CallMessage
         ], $this->getWampMessages());
     }
 
@@ -422,8 +420,7 @@ class CallObservableTest extends FunctionalTestCase
         ], $results->getMessages());
 
         $this->assertWampMessages([
-            [200, '[48,12345,{},"testing.uri"]'], //CallMessage
-            [1000, '[49,12345,{}]'] //CancelMessage
+            [200, '[48,12345,{},"testing.uri"]'] //CallMessage
         ], $this->getWampMessages());
     }
 

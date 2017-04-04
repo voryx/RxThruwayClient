@@ -52,12 +52,13 @@ final class RegisterObservable extends Observable
             ->filter(function (Message $msg) use ($requestId) {
                 return $msg instanceof RegisteredMessage && $msg->getRequestId() === $requestId;
             })
+            ->do(function (RegisteredMessage $registeredMsg) use (&$registrationId) {
+                $registrationId = $registeredMsg->getRegistrationId();
+            })
             ->take(1)
             ->share();
 
-        $invocationMsg = $registeredMsg->flatMap(function (RegisteredMessage $registeredMsg) use (&$registrationId) {
-            $registrationId = $registeredMsg->getRegistrationId();
-
+        $invocationMsg = $registeredMsg->flatMap(function (RegisteredMessage $registeredMsg) {
             return $this->messages->filter(function (Message $msg) use ($registeredMsg) {
                 return $msg instanceof InvocationMessage && $msg->getRegistrationId() === $registeredMsg->getRegistrationId();
             });

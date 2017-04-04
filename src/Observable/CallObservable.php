@@ -72,10 +72,14 @@ final class CallObservable extends Observable
             ->share();
 
         //Take until we get a result without progress
-        $resultMsg = $msg->takeWhile(function (ResultMessage $msg) {
-            $details = $msg->getDetails();
-            return (bool)($details->progress ?? false);
-        });
+        $resultMsg = $msg
+            ->takeWhile(function (ResultMessage $msg) {
+                $details = $msg->getDetails();
+                return (bool)($details->progress ?? false);
+            })
+            ->finally(function () {
+                $this->completed = true;
+            });
 
         $error = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
@@ -100,9 +104,6 @@ final class CallObservable extends Observable
                 $details = $msg->getDetails();
                 unset($details->progress);
                 return [$msg->getArguments(), $msg->getArgumentsKw(), $details];
-            })
-            ->doOnCompleted(function () {
-                $this->completed = true;
             });
 
         return new CompositeDisposable([
