@@ -112,7 +112,9 @@ final class RegisterObservable extends Observable
                     return Observable::empty($this->scheduler);
                 }
 
-                $resultObs = $result instanceof Observable ? $result : Observable::of($result, $this->scheduler);
+                $resultObs = $result instanceof Observable
+                    ? $result->defaultIfEmpty(Observable::of(null, $this->scheduler))
+                    : Observable::of($result, $this->scheduler);
 
                 if (($this->options['progress'] ?? false) === false) {
                     $returnObs = $resultObs

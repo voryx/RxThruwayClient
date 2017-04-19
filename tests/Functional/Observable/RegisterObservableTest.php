@@ -32,6 +32,11 @@ class RegisterObservableTest extends FunctionalTestCase
         return Observable::fromArray([$first, $second], $this->scheduler);
     }
 
+    public function callableEmpty($first = 0, $second = 0)
+    {
+        return Observable::empty($this->scheduler);
+    }
+
     /**
      * @test
      */
@@ -194,6 +199,48 @@ class RegisterObservableTest extends FunctionalTestCase
         $this->assertWampMessages([
             [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
             [261, '[70,12345,{},[0]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    public function register_with_one_invocation_empty_result()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', [$this, 'callableEmpty'], $messages, $webSocket, [], false, null, $this->scheduler);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [262, '[70,12345,{},[null]]'], //YieldMessage
             [350, '[66,12345,54321]'] //UnregisterMessage
         ], $this->getWampMessages());
     }
