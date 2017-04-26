@@ -17,11 +17,26 @@ final class WampInvocationException extends WampErrorException
         parent::__construct($errorUri, $arguments, $argumentsKw, $details);
     }
 
+    public static function withInvocationMessageAndWampErrorException(InvocationMessage $invocationMessage, WampErrorException $wee)
+    {
+        return new static(
+            $invocationMessage,
+            $wee->getErrorUri(),
+            $wee->getArguments(),
+            $wee->getArgumentsKw(),
+            $wee->getDetails());
+    }
+
     /**
      * @return mixed
      */
     public function getErrorMessage()
     {
-        return ErrorMessage::createErrorMessageFromMessage($this->invocationMessage, $this->getErrorUri());
+        $errorMessage = ErrorMessage::createErrorMessageFromMessage($this->invocationMessage, $this->getErrorUri());
+        $errorMessage->setArguments($this->getArguments());
+        $errorMessage->setArgumentsKw($this->getArgumentsKw());
+        $errorMessage->setDetails($this->getDetails());
+
+        return $errorMessage;
     }
 }

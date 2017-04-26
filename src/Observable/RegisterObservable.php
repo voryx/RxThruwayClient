@@ -108,8 +108,7 @@ final class RegisterObservable extends Observable
                         $result = call_user_func_array($this->callback, $msg->getArguments());
                     }
                 } catch (\Throwable $e) {
-                    $this->invocationErrors->onNext(new WampInvocationException($msg));
-                    return Observable::empty($this->scheduler);
+                    $result = Observable::error($e);
                 }
 
                 $resultObs = $result instanceof Observable
@@ -140,7 +139,11 @@ final class RegisterObservable extends Observable
                 return $returnObs
                     ->takeUntil($interruptMsg)
                     ->catch(function (\Throwable $ex) use ($msg) {
-                        $this->invocationErrors->onNext(new WampInvocationException($msg));
+                        $invocationError = $ex instanceof WampErrorException
+                            ? $invocationError = WampInvocationException::withInvocationMessageAndWampErrorException($msg, $ex)
+                            : new WampInvocationException($msg);
+
+                        $this->invocationErrors->onNext($invocationError);
                         return Observable::empty($this->scheduler);
                     });
 

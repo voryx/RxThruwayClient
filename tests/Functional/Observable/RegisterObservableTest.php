@@ -680,7 +680,8 @@ class RegisterObservableTest extends FunctionalTestCase
         ]);
 
         $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
-            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null,
+                $this->scheduler);
         });
 
         $this->assertMessages([
@@ -695,5 +696,93 @@ class RegisterObservableTest extends FunctionalTestCase
         $this->assertSubscriptions([
             subscribe(200, 350)
         ], $messages->getSubscriptions());
+    }
+
+    /**
+     * @test
+     */
+    public function register_callback_errors_with_wampErrorException_using_observable()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', function () {
+                return Observable::error(new WampErrorException('my.custom.error', [1], ['someKw' => 'someArg']), $this->scheduler);
+            }, $messages, $webSocket, [], false, null, $this->scheduler);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [261, '[8,68,12345,{},"my.custom.error",[1],{"someKw":"someArg"}]'], //ErrorMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    public function register_callback_errors_with_wampErrorException_using_throw()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $requestId = $msg->getRequestId();
+                $registeredMsg->setRequestId($requestId);
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(260, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', function () {
+                throw new WampErrorException('my.custom.error', [1], ['someKw' => 'someArg']);
+            }, $messages, $webSocket, [], false, null, $this->scheduler);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Sent Wamp Messages
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'],//RegisterMessage
+            [260, '[8,68,12345,{},"my.custom.error",[1],{"someKw":"someArg"}]'], //ErrorMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
     }
 }

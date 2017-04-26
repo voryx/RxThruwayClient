@@ -46,12 +46,6 @@
   "require-dev": {
     "phpunit/phpunit": "^5.5"
   },
-  "repositories": [
-    {
-      "type": "vcs",
-      "url": "git@github.com:voryx/ThruwayCommon.git"
-    }
-  ],
   "extra": {
     "branch-alias": {
       "dev-master": "2.0-dev"
