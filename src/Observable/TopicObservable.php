@@ -11,7 +11,7 @@ use Thruway\WampErrorException;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
 use Thruway\Message\{
-    Message, EventMessage, SubscribedMessage, ErrorMessage, SubscribeMessage, UnsubscribeMessage
+    Message, EventMessage, SubscribedMessage, ErrorMessage, SubscribeMessage, UnsubscribedMessage, UnsubscribeMessage
 };
 
 final class TopicObservable extends Observable
@@ -32,9 +32,11 @@ final class TopicObservable extends Observable
         $subscriptionId = null;
         $subscribeMsg   = new SubscribeMessage($requestId, $this->options, $this->uri);
 
-        $subscribedMsg = $this->messages->filter(function (Message $msg) use ($requestId) {
-            return $msg instanceof SubscribedMessage && $msg->getRequestId() === $requestId;
-        })->take(1);
+        $subscribedMsg = $this->messages
+            ->filter(function (Message $msg) use ($requestId) {
+                return $msg instanceof SubscribedMessage && $msg->getRequestId() === $requestId;
+            })
+            ->take(1);
 
         $errorMsg = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
@@ -42,6 +44,12 @@ final class TopicObservable extends Observable
             })
             ->flatMap(function (ErrorMessage $msg) {
                 return Observable::error(new WampErrorException($msg->getErrorURI(), $msg->getArguments()));
+            })
+            ->take(1);
+
+        $unsubscribeMsg = $this->messages
+            ->filter(function (Message $msg) use ($requestId) {
+                return $msg instanceof UnsubscribedMessage && $msg->getRequestId() === $requestId;
             })
             ->take(1);
 
@@ -57,6 +65,7 @@ final class TopicObservable extends Observable
                 });
             })
             ->merge($errorMsg)
+            ->takeUntil($unsubscribeMsg)
             ->subscribe($observer);
 
         $disposable = new CompositeDisposable();
