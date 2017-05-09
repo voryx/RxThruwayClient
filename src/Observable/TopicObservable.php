@@ -52,13 +52,9 @@ final class TopicObservable extends Observable
 
                 $subscriptionId = $subscribedMsg->getSubscriptionId();
 
-                return $this->messages
-                    ->filter(function (Message $msg) use ($subscriptionId) {
-                        return $msg instanceof EventMessage && $msg->getSubscriptionId() === $subscriptionId;
-                    })
-                    ->map(function (EventMessage $msg) {
-                        return [$msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails()];
-                    });
+                return $this->messages->filter(function (Message $msg) use ($subscriptionId) {
+                    return $msg instanceof EventMessage && $msg->getSubscriptionId() === $subscriptionId;
+                });
             })
             ->merge($errorMsg)
             ->subscribe($observer);
