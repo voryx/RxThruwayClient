@@ -140,13 +140,12 @@ final class RegisterObservable extends Observable
                     ->takeUntil($interruptMsg)
                     ->catch(function (\Throwable $ex) use ($msg) {
                         $invocationError = $ex instanceof WampErrorException
-                            ? $invocationError = WampInvocationException::withInvocationMessageAndWampErrorException($msg, $ex)
+                            ? WampInvocationException::withInvocationMessageAndWampErrorException($msg, $ex)
                             : new WampInvocationException($msg);
 
                         $this->invocationErrors->onNext($invocationError);
                         return Observable::empty($this->scheduler);
                     });
-
             })
             ->map(function ($args) {
                 /* @var $invocationMsg InvocationMessage */
