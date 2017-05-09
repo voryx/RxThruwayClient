@@ -103,7 +103,7 @@ final class CallObservable extends Observable
             ->map(function (ResultMessage $msg) {
                 $details = $msg->getDetails();
                 unset($details->progress);
-                return [$msg->getArguments(), $msg->getArgumentsKw(), $details];
+                return new ResultMessage($msg->getRequestId(), $details, $msg->getArguments(), $msg->getArgumentsKw());
             });
 
         return new CompositeDisposable([

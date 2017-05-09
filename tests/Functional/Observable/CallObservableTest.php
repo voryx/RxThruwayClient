@@ -88,7 +88,7 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(251, [[], new \stdClass(), new \stdClass()]),
+            onNext(251, $resultMessage),
             onCompleted(252)
         ], $results->getMessages());
     }
@@ -121,7 +121,7 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(251, [$args, new \stdClass(), new \stdClass()]),
+            onNext(251, $resultMessage),
             onCompleted(252)
         ], $results->getMessages());
     }
@@ -154,7 +154,7 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(251, [$args, $argskw, new \stdClass()]),
+            onNext(251, $resultMessage),
             onCompleted(252)
         ], $results->getMessages());
 
@@ -189,7 +189,7 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(251, [$args, $argskw, $details]),
+            onNext(251, $resultMessage),
             onCompleted(252)
         ], $results->getMessages());
 
@@ -227,7 +227,7 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(251, [$args, $argskw, $details]),
+            onNext(251, $resultMessage),
             onCompleted(252)
         ], $results->getMessages());
 
@@ -349,7 +349,7 @@ class CallObservableTest extends FunctionalTestCase
         });
 
         $this->assertMessages([
-            onNext(231, [$args, $argskw, $details]),
+            onNext(231, $resultMessage),
             onCompleted(232)
         ], $results->getMessages());
     }
@@ -493,7 +493,7 @@ class CallObservableTest extends FunctionalTestCase
         }, 260);
 
         $this->assertMessages([
-            onNext(251, [$args, $argskw, $details]),
+            onNext(251, $resultMessage),
             onCompleted(252)
         ], $results->getMessages());
     }
