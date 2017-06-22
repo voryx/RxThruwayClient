@@ -68,8 +68,7 @@ final class CallObservable extends Observable
                     ], $this->scheduler);
                 }
                 return Observable::of($msg);
-            })
-            ->share();
+            });
 
         //Take until we get a result without progress
         $resultMsg = $msg
@@ -79,7 +78,8 @@ final class CallObservable extends Observable
             })
             ->finally(function () {
                 $this->completed = true;
-            });
+            })
+            ->share();
 
         $error = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
