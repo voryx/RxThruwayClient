@@ -138,9 +138,9 @@ final class Client
      */
     public function progressiveRegister(string $uri, callable $callback, array $options = []): Observable
     {
-        $options['progress'] = true;
-
+        $options['progress']                 = true;
         $options['replace_orphaned_session'] = 'yes';
+        $options['force_reregister']         = true;
 
         return $this->registerExtended($uri, $callback, $options);
     }
