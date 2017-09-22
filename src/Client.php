@@ -2,7 +2,7 @@
 
 namespace Rx\Thruway;
 
-use Rx\ObserverInterface;
+use Rx\Exception\Exception;
 use Rx\Disposable\CompositeDisposable;
 use Rx\DisposableInterface;
 use Rx\Thruway\Subject\WebSocketSubject;
@@ -13,7 +13,7 @@ use Rx\Thruway\Observable\{
     CallObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
-    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
+    AbortMessage, AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
 
 final class Client
@@ -52,8 +52,8 @@ final class Client
             ->flatMapLatest(function (ChallengeMessage $msg) {
                 $challengeResult = null;
                 try {
-                    $challengeResult = call_user_func($this->challengeCallback, Observable::just([$msg->getAuthMethod(), $msg->getDetails()]));
-                } catch (\Exception $e) {
+                    $challengeResult = call_user_func($this->challengeCallback, Observable::of($msg));
+                } catch (\Throwable $e) {
                     throw new WampChallengeException($msg);
                 }
                 return $challengeResult->take(1);
@@ -61,22 +61,30 @@ final class Client
             ->map(function ($signature) {
                 return new AuthenticateMessage($signature);
             })
-            ->catch(function (\Exception $ex) {
+            ->catch(function (\Throwable $ex) {
                 if ($ex instanceof WampChallengeException) {
-                    return Observable::just($ex->getErrorMessage());
+                    return Observable::of($ex->getErrorMessage());
                 }
                 return Observable::error($ex);
             })
             ->do($this->webSocket);
 
+
+        $abortMsg = $this->messages
+            ->filter(function (Message $msg) {
+                return $msg instanceof AbortMessage;
+            })
+            ->map(function (AbortMessage $msg) {
+                throw new Exception($msg->getDetails()->message . ' ' . $msg->getResponseURI());
+            });
+
         $this->session = $session ?: $this->messages
             ->merge($challengeMsg)
+            ->merge($abortMsg)
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
-            ->compose(function ($observable) {
-                return $this->singleInstanceReplay($observable);
-            });
+            ->shareReplay(1);
 
         $this->disposable->add($this->webSocket);
     }
@@ -259,36 +267,5 @@ final class Client
                 ]
             ]
         ];
-    }
-
-    /**
-     * RxPHP's shareReplay() does not reconnect after the subscribers go from 1 to 0.
-     * This Observable provides the RxJS5 shareReplay() functionality, where it can go from 1 to 0 to 1
-     * without killing the observable stream.
-     *
-     * @param Observable $source
-     * @return Observable
-     * @throws \InvalidArgumentException
-     */
-    private function singleInstanceReplay(Observable $source): Observable
-    {
-        $hasObservable = false;
-        $observable = null;
-
-        $getObservable = function () use (&$hasObservable, &$observable, $source): Observable {
-            if (!$hasObservable) {
-                $hasObservable = true;
-                $observable = $source
-                    ->finally(function () use (&$hasObservable) {
-                        $hasObservable = false;
-                    })
-                    ->shareReplay(1);
-            }
-            return $observable;
-        };
-
-        return new Observable\AnonymousObservable(function (ObserverInterface $o) use ($getObservable) {
-            return $getObservable()->subscribe($o);
-        });
     }
 }
