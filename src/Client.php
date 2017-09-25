@@ -5,6 +5,8 @@ namespace Rx\Thruway;
 use Rx\Exception\Exception;
 use Rx\Disposable\CompositeDisposable;
 use Rx\DisposableInterface;
+use Rx\Scheduler;
+use Rx\Thruway\Subject\SessionReplaySubject;
 use Rx\Thruway\Subject\WebSocketSubject;
 use Thruway\Common\Utils;
 use Rx\Subject\Subject;
@@ -84,7 +86,7 @@ final class Client
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
-            ->shareReplay(1);
+            ->multicast(new SessionReplaySubject($close, Scheduler::getAsync()))->refCount();
 
         $this->disposable->add($this->webSocket);
     }
