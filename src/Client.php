@@ -180,20 +180,22 @@ final class Client
      */
     public function publish(string $uri, $obs, array $options = []): DisposableInterface
     {
-        $obs = $obs instanceof Observable ? $obs : Observable::just($obs);
+        $obs = $obs instanceof Observable ? $obs : Observable::of($obs);
 
         $completed = new Subject();
 
         return $this->session
             ->takeUntil($completed)
-            ->mapTo($obs->doOnCompleted(function () use ($completed) {
+            ->mapTo($obs->finally(function () use ($completed) {
                 $completed->onNext(0);
             }))
             ->switchFirst()
             ->map(function ($value) use ($uri, $options) {
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
-            ->subscribe($this->webSocket);
+            ->subscribe(function ($value) {
+                $this->webSocket->onNext($value);
+            });
     }
 
     public function onChallenge(callable $challengeCallback)
