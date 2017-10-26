@@ -1,21 +1,20 @@
 <?php
 
 use Rx\Thruway\Client;
+use Thruway\Message\ResultMessage;
 
 require __DIR__ . '/../vendor/autoload.php';
 
 $client = new Client('ws://127.0.0.1:9090', 'realm1');
 
 $client
-    ->progressiveCall('com.myapp.example', [1234], [])
+    ->progressiveCall('com.myapp.example', [1234])
     ->take(10)
     ->subscribe(
-        function ($res) {
-            list($args, $argskw, $details) = $res;
-
-            echo 'Call result: ', $args[0], PHP_EOL;
+        function (ResultMessage $res) {
+            echo 'Call result: ', $res->getArguments()[0], PHP_EOL;
         },
-        function (Exception $e) {
+        function (Throwable $e) {
             echo 'Call error: ', $e->getMessage(), PHP_EOL;
         },
         function () {

@@ -2,14 +2,15 @@
 
 use Rx\Observable;
 use Rx\Thruway\Client;
+use Thruway\Message\ChallengeMessage;
+use Thruway\Message\ResultMessage;
 
 require __DIR__ . '/../vendor/autoload.php';
 
 $client = new Client('ws://127.0.0.1:9090', 'somerealm', ['authmethods' => ['simplysimple']]);
 
 $client->onChallenge(function (Observable $challenge) {
-    return $challenge->map(function ($args) {
-        list($method, $extra) = $args;
+    return $challenge->map(function (ChallengeMessage $args) {
         return 'letMeIn';
     });
 });
@@ -24,8 +25,6 @@ $client
 
 $client
     ->call('com.myapp.example', [1234])
-    ->subscribe(function ($res) {
-        list($args, $argskw, $details) = $res;
-
-        echo 'Call result: ', $args[0], PHP_EOL;
+    ->subscribe(function (ResultMessage $res) {
+        echo 'Call result: ', $res->getArguments()[0], PHP_EOL;
     });
