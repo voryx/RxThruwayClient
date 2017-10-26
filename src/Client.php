@@ -119,15 +119,18 @@ final class Client
     {
         $options['receive_progress'] = true;
 
-        $completed = new Subject();
-        $callObs   = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
+        return Observable::defer(function () use ($uri, $args, $argskw, $options) {
+            $completed = new Subject();
+            $callObs = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
 
-        return $this->session
-            ->takeUntil($completed)
-            ->mapTo($callObs->doOnCompleted(function () use ($completed) {
-                $completed->onNext(0);
-            }))
-            ->switch();
+            return $this->session
+                ->takeUntil($completed)
+                ->mapTo($callObs->doOnCompleted(function () use ($completed) {
+                    $completed->onNext(0);
+                }))
+                ->switch();
+        });
+
     }
 
     /**
