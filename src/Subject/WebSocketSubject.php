@@ -66,7 +66,7 @@ final class WebSocketSubject extends Subject
                     $pingTimer = $this->loop->addPeriodicTimer(30, function (Timer $timer) use (&$lastReceivedPong) {
                         static $sequence = 0;
 
-                        if ((int)$lastReceivedPong !== (int)$sequence) {
+                        if ($lastReceivedPong !== $sequence) {
                             $timer->cancel();
                             if ($this->socket) {
                                 $this->socket->close();
@@ -103,7 +103,12 @@ final class WebSocketSubject extends Subject
 
                     $ws->on('message', function ($message) {
 
-                        $msg = $this->serializer->deserialize($message);
+                        try {
+                            $msg = $this->serializer->deserialize($message);
+                        } catch (\Throwable $t) {
+                            $this->onError($t);
+                            return;
+                        }
 
                         if ($msg instanceof AbortMessage) {
                             $this->output->onError(new \Exception($msg->getResponseURI()));
