@@ -66,7 +66,7 @@ final class WebSocketSubject extends Subject
                     $pingTimer = $this->loop->addPeriodicTimer(30, function (Timer $timer) use (&$lastReceivedPong) {
                         static $sequence = 0;
 
-                        if ($lastReceivedPong !== $sequence) {
+                        if ((int)$lastReceivedPong !== $sequence) {
                             $timer->cancel();
                             if ($this->socket) {
                                 $this->socket->close();
