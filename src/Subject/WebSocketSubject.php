@@ -23,11 +23,11 @@ final class WebSocketSubject extends Subject
 
     public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null)
     {
-        $this->openObserver = $openObserver ?? new Subject();
+        $this->openObserver  = $openObserver ?? new Subject();
         $this->closeObserver = $closeObserver ?? new Subject();
-        $this->serializer = new JsonSerializer();
-        $this->loop = \EventLoop\getLoop();
-        $this->sendSubject = new ReplaySubject();
+        $this->serializer    = new JsonSerializer();
+        $this->loop          = \EventLoop\getLoop();
+        $this->sendSubject   = new ReplaySubject();
 
         $this->ws = new Client($url, false, $protocols, $this->loop);
     }

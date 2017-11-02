@@ -31,11 +31,11 @@ final class Client
         $this->challengeCallback = function () {
         };
 
-        $open = new Subject();
+        $open  = new Subject();
         $close = new Subject();
 
         $this->webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
-        $this->messages = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->singleInstance();
+        $this->messages  = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->singleInstance();
 
         $open
             ->do(function () {
@@ -131,15 +131,17 @@ final class Client
     {
         $options['receive_progress'] = true;
 
-        $completed = new Subject();
-        $callObs = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
+        return Observable::defer(function () use ($uri, $args, $argskw, $options) {
+            $completed = new Subject();
+            $callObs   = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
 
-        return $this->session
-            ->takeUntil($completed)
-            ->mapTo($callObs->doOnCompleted(function () use ($completed) {
-                $completed->onNext(0);
-            }))
-            ->switch();
+            return $this->session
+                ->takeUntil($completed)
+                ->mapTo($callObs->doOnCompleted(function () use ($completed) {
+                    $completed->onNext(0);
+                }))
+                ->switch();
+        });
     }
 
     /**
@@ -150,9 +152,9 @@ final class Client
      */
     public function progressiveRegister(string $uri, callable $callback, array $options = []): Observable
     {
-        $options['progress'] = true;
+        $options['progress']                 = true;
         $options['replace_orphaned_session'] = 'yes';
-        $options['force_reregister'] = true;
+        $options['force_reregister']         = true;
 
         return $this->registerExtended($uri, $callback, $options);
     }
@@ -192,20 +194,22 @@ final class Client
      */
     public function publish(string $uri, $obs, array $options = []): DisposableInterface
     {
-        $obs = $obs instanceof Observable ? $obs : Observable::just($obs);
+        $obs = $obs instanceof Observable ? $obs : Observable::of($obs);
 
         $completed = new Subject();
 
         return $this->session
             ->takeUntil($completed)
-            ->mapTo($obs->doOnCompleted(function () use ($completed) {
+            ->mapTo($obs->finally(function () use ($completed) {
                 $completed->onNext(0);
             }))
             ->switchFirst()
             ->map(function ($value) use ($uri, $options) {
                 return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
             })
-            ->subscribe($this->webSocket);
+            ->subscribe(function ($value) {
+                $this->webSocket->onNext($value);
+            });
     }
 
     public function onChallenge(callable $challengeCallback)
@@ -220,14 +224,14 @@ final class Client
 
     public function _reconnect(Observable $attempts)
     {
-        $maxRetryDelay = 150000;
+        $maxRetryDelay     = 150000;
         $initialRetryDelay = 1500;
-        $retryDelayGrowth = 1.5;
-        $maxRetries = 150;
+        $retryDelayGrowth  = 1.5;
+        $maxRetries        = 150;
 
         return $attempts
             ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
-                $delay = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
+                $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
                 $seconds = number_format((float)$delay / 1000, 3, '.', '');;
                 echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
                 return Observable::timer((int)$delay);

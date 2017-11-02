@@ -82,5 +82,4 @@ class SessionReplaySubject extends Subject
             }
         });
     }
-
 }
