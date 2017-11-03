@@ -2,11 +2,12 @@
 
 namespace Rx\Thruway;
 
+use Rx\Exception\Exception;
+use Rx\Disposable\CompositeDisposable;
+use Rx\DisposableInterface;
 use Rx\Scheduler;
 use Rx\Thruway\Subject\SessionReplaySubject;
 use Rx\Thruway\Subject\WebSocketSubject;
-use Rx\Disposable\CompositeDisposable;
-use Rx\DisposableInterface;
 use Thruway\Common\Utils;
 use Rx\Subject\Subject;
 use Rx\Observable;
@@ -14,7 +15,7 @@ use Rx\Thruway\Observable\{
     CallObservable, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
-    AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
+    AbortMessage, AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
 
 final class Client
@@ -34,16 +35,17 @@ final class Client
         $close = new Subject();
 
         $this->webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
-        $this->messages  = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->shareReplay(0);
+        $this->messages  = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->singleInstance();
 
         $open
-            ->doOnNext(function () {
+            ->do(function () {
                 $this->currentRetryCount = 0;
             })
             ->map(function () use ($realm, $options) {
                 $options['roles'] = $this->roles();
                 return new HelloMessage($realm, (object)$options);
-            })->subscribe($this->webSocket);
+            })
+            ->subscribe($this->webSocket);
 
         $challengeMsg = $this->messages
             ->filter(function (Message $msg) {
@@ -52,8 +54,8 @@ final class Client
             ->flatMapLatest(function (ChallengeMessage $msg) {
                 $challengeResult = null;
                 try {
-                    $challengeResult = call_user_func($this->challengeCallback, Observable::just([$msg->getAuthMethod(), $msg->getDetails()]));
-                } catch (\Exception $e) {
+                    $challengeResult = call_user_func($this->challengeCallback, Observable::of($msg));
+                } catch (\Throwable $e) {
                     throw new WampChallengeException($msg);
                 }
                 return $challengeResult->take(1);
@@ -61,16 +63,26 @@ final class Client
             ->map(function ($signature) {
                 return new AuthenticateMessage($signature);
             })
-            ->catch(function (\Exception $ex) {
+            ->catch(function (\Throwable $ex) {
                 if ($ex instanceof WampChallengeException) {
-                    return Observable::just($ex->getErrorMessage());
+                    return Observable::of($ex->getErrorMessage());
                 }
                 return Observable::error($ex);
             })
             ->do($this->webSocket);
 
+
+        $abortMsg = $this->messages
+            ->filter(function (Message $msg) {
+                return $msg instanceof AbortMessage;
+            })
+            ->map(function (AbortMessage $msg) {
+                throw new Exception($msg->getDetails()->message . ' ' . $msg->getResponseURI());
+            });
+
         $this->session = $session ?: $this->messages
             ->merge($challengeMsg)
+            ->merge($abortMsg)
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
@@ -121,7 +133,7 @@ final class Client
 
         return Observable::defer(function () use ($uri, $args, $argskw, $options) {
             $completed = new Subject();
-            $callObs = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
+            $callObs   = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
 
             return $this->session
                 ->takeUntil($completed)
@@ -130,7 +142,6 @@ final class Client
                 }))
                 ->switch();
         });
-
     }
 
     /**
@@ -228,37 +239,37 @@ final class Client
             ->take($maxRetries);
     }
 
-    private function roles()
+    private function roles(): array
     {
         return [
-            'caller'     => [
+            'caller' => [
                 'features' => [
-                    'caller_identification'    => true,
+                    'caller_identification' => true,
                     'progressive_call_results' => true
                 ]
             ],
-            'callee'     => [
+            'callee' => [
                 'features' => [
-                    'call_canceling'             => true,
-                    'caller_identification'      => true,
+                    'call_canceling' => true,
+                    'caller_identification' => true,
                     'pattern_based_registration' => true,
-                    'shared_registration'        => true,
-                    'progressive_call_results'   => true,
-                    'registration_revocation'    => true
+                    'shared_registration' => true,
+                    'progressive_call_results' => true,
+                    'registration_revocation' => true
                 ]
             ],
-            'publisher'  => [
+            'publisher' => [
                 'features' => [
-                    'publisher_identification'      => true,
+                    'publisher_identification' => true,
                     'subscriber_blackwhite_listing' => true,
-                    'publisher_exclusion'           => true
+                    'publisher_exclusion' => true
                 ]
             ],
             'subscriber' => [
                 'features' => [
-                    'publisher_identification'   => true,
+                    'publisher_identification' => true,
                     'pattern_based_subscription' => true,
-                    'subscription_revocation'    => true
+                    'subscription_revocation' => true
                 ]
             ]
         ];

@@ -8,7 +8,6 @@ require __DIR__ . '/../vendor/autoload.php';
 
 $client = new Client('ws://127.0.0.1:9090', 'realm1');
 
-
 //Repeat only after the proceeding call has completed
 $source = $client
     ->register('com.myapp.example', function () {

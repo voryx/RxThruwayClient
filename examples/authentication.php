@@ -10,7 +10,7 @@ require __DIR__ . '/../vendor/autoload.php';
 $client = new Client('ws://127.0.0.1:9090', 'somerealm', ['authmethods' => ['simplysimple']]);
 
 $client->onChallenge(function (Observable $challenge) {
-    return $challenge->map(function (ChallengeMessage $args) {
+    return $challenge->map(function (ChallengeMessage $msg) {
         return 'letMeIn';
     });
 });
