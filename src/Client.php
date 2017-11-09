@@ -5,14 +5,12 @@ namespace Rx\Thruway;
 use Rx\Exception\Exception;
 use Rx\Disposable\CompositeDisposable;
 use Rx\DisposableInterface;
-use Rx\Scheduler;
-use Rx\Thruway\Subject\SessionReplaySubject;
 use Rx\Thruway\Subject\WebSocketSubject;
 use Thruway\Common\Utils;
 use Rx\Subject\Subject;
 use Rx\Observable;
 use Rx\Thruway\Observable\{
-    CallObservable, TopicObservable, RegisterObservable, WampChallengeException
+    CallObservable, SingleInstanceReplay, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
     AbortMessage, AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
@@ -71,7 +69,6 @@ final class Client
             })
             ->do($this->webSocket);
 
-
         $abortMsg = $this->messages
             ->filter(function (Message $msg) {
                 return $msg instanceof AbortMessage;
@@ -86,7 +83,7 @@ final class Client
             ->filter(function (Message $msg) {
                 return $msg instanceof WelcomeMessage;
             })
-            ->multicast(new SessionReplaySubject($close, Scheduler::getAsync()))->refCount();
+            ->compose(new SingleInstanceReplay(1));
 
         $this->disposable->add($this->webSocket);
     }
