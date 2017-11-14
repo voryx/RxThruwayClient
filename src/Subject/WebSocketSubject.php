@@ -3,6 +3,7 @@
 namespace Rx\Thruway\Subject;
 
 use Rx\DisposableInterface;
+use Rx\Observable;
 use Rx\ObserverInterface;
 use Rx\Subject\ReplaySubject;
 use Rx\Subject\Subject;
@@ -46,6 +47,11 @@ final class WebSocketSubject extends Subject
 
                 // Now that the connection has been established, use the message subject directly.
                 $this->sendSubject = $ms;
+            })
+            ->repeatWhen(function (Observable $a) {
+                return $a->do(function () {
+                    echo "Reconnecting\n";
+                })->delay(1000);
             })
             ->do([$this->openObserver, 'onNext'])
             ->finally(function () {
