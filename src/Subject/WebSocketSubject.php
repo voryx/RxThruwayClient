@@ -2,6 +2,7 @@
 
 namespace Rx\Thruway\Subject;
 
+use function EventLoop\getLoop;
 use Rx\DisposableInterface;
 use Rx\Observable;
 use Rx\ObserverInterface;
@@ -17,7 +18,6 @@ final class WebSocketSubject extends Subject
 {
     private $ws;
     private $sendSubject;
-    private $loop;
     private $openObserver;
     private $closeObserver;
     private $serializer;
@@ -27,10 +27,9 @@ final class WebSocketSubject extends Subject
         $this->openObserver  = $openObserver ?? new Subject();
         $this->closeObserver = $closeObserver ?? new Subject();
         $this->serializer    = new JsonSerializer();
-        $this->loop          = \EventLoop\getLoop();
         $this->sendSubject   = new ReplaySubject();
 
-        $this->ws = new Client($url, false, $protocols, $this->loop);
+        $this->ws = new Client($url, false, $protocols, getLoop());
     }
 
     public function onNext($value)
@@ -47,17 +46,22 @@ final class WebSocketSubject extends Subject
 
                 // Now that the connection has been established, use the message subject directly.
                 $this->sendSubject = $ms;
+                $this->openObserver->onNext($ms);
+            })
+            ->finally(function () {
+                // The connection has closed, so start buffering messages util it reconnects.
+                $this->sendSubject = new ReplaySubject();
+                $this->closeObserver->onNext(0);
             })
             ->repeatWhen(function (Observable $a) {
                 return $a->do(function () {
                     echo "Reconnecting\n";
                 })->delay(1000);
             })
-            ->do([$this->openObserver, 'onNext'])
-            ->finally(function () {
-                // The connection has closed, so start buffering messages util it reconnects.
-                $this->sendSubject = new ReplaySubject();
-                $this->closeObserver->onNext(0);
+            ->retryWhen(function (Observable $a) {
+                return $a->do(function (\Throwable $e) {
+                    echo "Error {$e->getMessage()}, Reconnecting\n";
+                })->delay(1000);
             })
             ->mergeAll()
             ->map([$this->serializer, 'deserialize'])
