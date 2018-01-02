@@ -13,12 +13,12 @@ use Rx\Thruway\Observable\{
     CallObservable, SingleInstanceReplay, TopicObservable, RegisterObservable, WampChallengeException
 };
 use Thruway\Message\{
-    AbortMessage, AuthenticateMessage, ChallengeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
+    AbortMessage, AuthenticateMessage, ChallengeMessage, GoodbyeMessage, Message, HelloMessage, PublishMessage, WelcomeMessage
 };
 
 final class Client
 {
-    private $session, $messages, $webSocket, $disposable, $challengeCallback;
+    private $session, $messages, $webSocket, $disposable, $challengeCallback, $onClose;
 
     private $currentRetryCount = 0;
 
@@ -34,6 +34,12 @@ final class Client
 
         $this->webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
         $this->messages  = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->singleInstance();
+
+        $this->onClose = $this->messages
+            ->filter(function ($msg) {
+                return $msg instanceof AbortMessage || $msg instanceof GoodbyeMessage;
+            })
+            ->singleInstance();
 
         $open
             ->do(function () {
@@ -217,6 +223,16 @@ final class Client
     public function close()
     {
         $this->disposable->dispose();
+    }
+
+    public function onOpen(): Observable
+    {
+        return $this->session;
+    }
+
+    public function onClose(): Observable
+    {
+        return $this->onClose;
     }
 
     public function _reconnect(Observable $attempts)
