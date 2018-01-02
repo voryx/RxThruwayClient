@@ -202,7 +202,7 @@ final class Client
         $completed = new Subject();
 
         return $this->session
-            ->takeUntil($completed)
+            ->takeUntil($completed->delay(1))
             ->mapTo($obs->finally(function () use ($completed) {
                 $completed->onNext(0);
             }))
