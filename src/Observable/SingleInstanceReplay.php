@@ -20,19 +20,24 @@ class SingleInstanceReplay
         $observable    = null;
 
         $getObservable = function () use (&$hasObservable, &$observable, $source): Observable {
-            if (!$hasObservable) {
-                $hasObservable = true;
-                $observable    = $source
-                    ->finally(function () use (&$hasObservable) {
-                        $hasObservable = false;
-                    })
-                    ->shareReplay($this->bufferSize);
+            if ($hasObservable) {
+                return $observable;
             }
+
+            $observable = $source
+                ->finally(function () use (&$hasObservable) {
+                    $hasObservable = false;
+                })
+                ->shareReplay($this->bufferSize);
+
+            $hasObservable = true;
+
             return $observable;
         };
 
         return new Observable\AnonymousObservable(function (ObserverInterface $o) use ($getObservable) {
-            return $getObservable()->subscribe($o);
+            $obs = $getObservable();
+            return $obs->subscribe($o);
         });
     }
 }

@@ -41,11 +41,15 @@ final class WebSocketSubject extends Subject
     {
         return $this->ws
             ->do(function ($ms) {
-                // Replay buffered messages onto the MessageSubject
-                $this->sendSubject->subscribe($ms);
+
+                $bufferedMessages = $this->sendSubject;
 
                 // Now that the connection has been established, use the message subject directly.
                 $this->sendSubject = $ms;
+
+                // Replay buffered messages onto the MessageSubject
+                $bufferedMessages->subscribe($ms);
+
                 $this->openObserver->onNext($ms);
             })
             ->finally(function () {
@@ -63,7 +67,7 @@ final class WebSocketSubject extends Subject
                     echo "Error {$e->getMessage()}, Reconnecting\n";
                 })->delay(1000);
             })
-            ->mergeAll()
+            ->switch()
             ->map([$this->serializer, 'deserialize'])
             ->subscribe($observer);
     }

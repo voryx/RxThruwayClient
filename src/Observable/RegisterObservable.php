@@ -10,7 +10,6 @@ use Rx\SchedulerInterface;
 use Rx\Subject\Subject;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
-use Rx\Observer\CallbackObserver;
 use Rx\Disposable\CallbackDisposable;
 use Rx\Disposable\CompositeDisposable;
 use Thruway\Message\{
@@ -88,7 +87,7 @@ final class RegisterObservable extends Observable
         $registerSubscription = $registeredMsg
             ->merge($unregisteredMsg)
             ->merge($error)
-            ->subscribe(new CallbackObserver(
+            ->subscribe(
                 [$observer, 'onNext'],
                 [$observer, 'onError'],
                 function () use (&$completed, $observer, $unregister) {
@@ -96,7 +95,7 @@ final class RegisterObservable extends Observable
                     $completed = true;
                     $observer->onCompleted();
                 }
-            ));
+            );
 
         $invocationSubscription = $invocationMsg
             ->flatMap(function (InvocationMessage $msg) {

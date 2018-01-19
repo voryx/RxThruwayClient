@@ -18,13 +18,17 @@ use Thruway\Message\{
 
 final class Client
 {
-    private $session, $messages, $webSocket, $disposable, $challengeCallback, $onClose;
+    /* @var Observable */
+    private $session;
+
+    private $disposable, $challengeCallback, $onClose;
 
     private $currentRetryCount = 0;
 
     public function __construct(string $url, string $realm, array $options = [], Subject $webSocket = null, Observable $messages = null, Observable $session = null)
     {
         $this->disposable = new CompositeDisposable();
+        $this->onClose    = new Subject();
 
         $this->challengeCallback = function () {
         };
@@ -32,15 +36,10 @@ final class Client
         $open  = new Subject();
         $close = new Subject();
 
-        $this->webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
-        $this->messages  = $messages ?: $this->webSocket->retryWhen([$this, '_reconnect'])->singleInstance();
+        $webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close);
+        $messages  = $messages ?: $webSocket->retryWhen([$this, '_reconnect'])->singleInstance();
 
-        $this->onClose = $this->messages
-            ->filter(function ($msg) {
-                return $msg instanceof AbortMessage || $msg instanceof GoodbyeMessage;
-            })
-            ->singleInstance();
-
+        //When the connection opens, send a HelloMessage
         $open
             ->do(function () {
                 $this->currentRetryCount = 0;
@@ -49,49 +48,46 @@ final class Client
                 $options['roles'] = $this->roles();
                 return new HelloMessage($realm, (object)$options);
             })
-            ->subscribe($this->webSocket);
+            ->subscribe([$webSocket, 'onNext']);
 
-        $challengeMsg = $this->messages
-            ->filter(function (Message $msg) {
-                return $msg instanceof ChallengeMessage;
-            })
-            ->flatMapLatest(function (ChallengeMessage $msg) {
-                $challengeResult = null;
-                try {
-                    $challengeResult = call_user_func($this->challengeCallback, Observable::of($msg));
-                } catch (\Throwable $e) {
-                    throw new WampChallengeException($msg);
-                }
-                return $challengeResult->take(1);
-            })
-            ->map(function ($signature) {
-                return new AuthenticateMessage($signature);
-            })
-            ->catch(function (\Throwable $ex) {
-                if ($ex instanceof WampChallengeException) {
-                    return Observable::of($ex->getErrorMessage());
-                }
-                return Observable::error($ex);
-            })
-            ->do($this->webSocket);
+        [$challengeMsg, $remainingMsgs] = $messages->partition(function (Message $msg) {
+            return $msg instanceof ChallengeMessage;
+        });
 
-        $abortMsg = $this->messages
-            ->filter(function (Message $msg) {
-                return $msg instanceof AbortMessage;
-            })
-            ->map(function (AbortMessage $msg) {
-                throw new Exception($msg->getDetails()->message . ' ' . $msg->getResponseURI());
+        [$goodByeMsg, $remainingMsgs] = $remainingMsgs->partition(function ($msg) {
+            return $msg instanceof AbortMessage || $msg instanceof GoodbyeMessage;
+        });
+
+        [$abortMsg, $remainingMsgs] = $remainingMsgs->partition(function (Message $msg) {
+            return $msg instanceof AbortMessage;
+        });
+
+        $goodByeMsg = $goodByeMsg->do([$this->onClose, 'onNext']);
+
+        $abortMsg = $abortMsg->do([$this->onClose, 'onNext']);
+
+        $remainingMsgs = $remainingMsgs->merge($goodByeMsg);
+
+        $challenge = $this->challenge($challengeMsg)->do([$webSocket, 'onNext']);
+
+        $abortError = $abortMsg->map(function (AbortMessage $msg) {
+            throw new Exception($msg->getDetails()->message . ' ' . $msg->getResponseURI());
+        });
+
+        [$welcomeMsg, $remainingMsgs] = $remainingMsgs
+            ->merge($challenge)
+            ->merge($abortError)
+            ->partition(function (Message $msg) {
+                return $msg instanceof WelcomeMessage;
             });
 
-        $this->session = $session ?: $this->messages
-            ->merge($challengeMsg)
-            ->merge($abortMsg)
-            ->filter(function (Message $msg) {
-                return $msg instanceof WelcomeMessage;
+        $this->session = $session ?: $welcomeMsg
+            ->map(function (WelcomeMessage $welcomeMsg) use ($remainingMsgs, $webSocket) {
+                return [$remainingMsgs, $webSocket, $welcomeMsg];
             })
             ->compose(new SingleInstanceReplay(1));
 
-        $this->disposable->add($this->webSocket);
+        $this->disposable->add($webSocket);
     }
 
     /**
@@ -104,9 +100,11 @@ final class Client
     public function call(string $uri, array $args = [], array $argskw = [], array $options = null): Observable
     {
         return $this->session
-            ->take(1)
-            ->mapTo(new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options))
-            ->switch();
+            ->flatMapLatest(function ($res) use ($uri, $args, $argskw, $options) {
+                [$messages, $webSocket] = $res;
+                return new CallObservable($uri, $messages, $webSocket, $args, $argskw, $options);
+            })
+            ->take(1);
     }
 
     /**
@@ -136,14 +134,16 @@ final class Client
 
         return Observable::defer(function () use ($uri, $args, $argskw, $options) {
             $completed = new Subject();
-            $callObs   = new CallObservable($uri, $this->messages, $this->webSocket, $args, $argskw, $options);
 
             return $this->session
                 ->takeUntil($completed)
-                ->mapTo($callObs->doOnCompleted(function () use ($completed) {
-                    $completed->onNext(0);
-                }))
-                ->switch();
+                ->flatMapLatest(function ($res) use ($completed, $uri, $args, $argskw, $options) {
+                    [$messages, $webSocket] = $res;
+                    return (new CallObservable($uri, $messages, $webSocket, $args, $argskw, $options))
+                        ->doOnCompleted(function () use ($completed) {
+                            $completed->onNext(0);
+                        });
+                });
         });
     }
 
@@ -171,9 +171,10 @@ final class Client
      */
     public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true): Observable
     {
-        return $this->session
-            ->mapTo(new RegisterObservable($uri, $callback, $this->messages, $this->webSocket, $options, $extended))
-            ->switch();
+        return $this->session->flatMapLatest(function ($res) use ($uri, $callback, $options, $extended) {
+            [$messages, $webSocket] = $res;
+            return new RegisterObservable($uri, $callback, $messages, $webSocket, $options, $extended);
+        });
     }
 
     /**
@@ -183,9 +184,10 @@ final class Client
      */
     public function topic(string $uri, array $options = []): Observable
     {
-        return $this->session
-            ->mapTo(new TopicObservable($uri, $options, $this->messages, $this->webSocket))
-            ->switch();
+        return $this->session->flatMapLatest(function ($res) use ($uri, $options) {
+            [$messages, $webSocket] = $res;
+            return new TopicObservable($uri, $options, $messages, $webSocket);
+        });
     }
 
     /**
@@ -250,6 +252,29 @@ final class Client
                 return Observable::timer((int)$delay);
             })
             ->take($maxRetries);
+    }
+
+    private function challenge(Observable $challengeMsg): Observable
+    {
+        return $challengeMsg
+            ->flatMapLatest(function (ChallengeMessage $msg) {
+                $challengeResult = null;
+                try {
+                    $challengeResult = \call_user_func($this->challengeCallback, Observable::of($msg));
+                } catch (\Throwable $e) {
+                    throw new WampChallengeException($msg);
+                }
+                return $challengeResult->take(1);
+            })
+            ->map(function ($signature) {
+                return new AuthenticateMessage($signature);
+            })
+            ->catch(function (\Throwable $ex) {
+                if ($ex instanceof WampChallengeException) {
+                    return Observable::of($ex->getErrorMessage());
+                }
+                return Observable::error($ex);
+            });
     }
 
     private function roles(): array
