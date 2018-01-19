@@ -205,16 +205,19 @@ final class Client
 
         return $this->session
             ->takeUntil($completed->delay(1))
-            ->mapTo($obs->finally(function () use ($completed) {
-                $completed->onNext(0);
-            }))
-            ->switchFirst()
-            ->map(function ($value) use ($uri, $options) {
-                return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
+            ->pluck(1)
+            ->map(function ( $webSocket) use ($obs, $completed, $uri, $options) {
+                return $obs
+                    ->finally(function () use ($completed) {
+                        $completed->onNext(0);
+                    })
+                    ->map(function ($value) use ($uri, $options) {
+                        return new PublishMessage(Utils::getUniqueId(), (object)$options, $uri, [$value]);
+                    })
+                    ->do([$webSocket, 'onNext']);
             })
-            ->subscribe(function ($value) {
-                $this->webSocket->onNext($value);
-            });
+            ->switchFirst()
+            ->subscribe();
     }
 
     public function onChallenge(callable $challengeCallback)
