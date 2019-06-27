@@ -30,7 +30,8 @@ final class CallObservable extends Observable
         array $options = null,
         int $timeout = 300000,
         SchedulerInterface $scheduler = null
-    ) {
+    )
+    {
         $this->uri       = $uri;
         $this->args      = $args;
         $this->argskw    = $argskw;
@@ -86,7 +87,7 @@ final class CallObservable extends Observable
                 return $msg instanceof ErrorMessage && $msg->getErrorRequestId() === $requestId;
             })
             ->flatMap(function (ErrorMessage $msg) {
-                return Observable::error(new WampErrorException($msg->getErrorURI(), $msg->getArguments()), $this->scheduler);
+                return Observable::error(new WampErrorException($msg->getErrorURI() . ':' . $this->uri, $msg->getArguments()), $this->scheduler);
             })
             ->takeUntil($resultMsg)
             ->take(1);

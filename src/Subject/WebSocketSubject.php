@@ -52,6 +52,7 @@ final class WebSocketSubject extends Subject
 
                 $this->openObserver->onNext($ms);
             })
+            ->switch()
             ->finally(function () {
                 // The connection has closed, so start buffering messages util it reconnects.
                 $this->sendSubject = new ReplaySubject();
@@ -67,7 +68,6 @@ final class WebSocketSubject extends Subject
                     echo "Error {$e->getMessage()}, Reconnecting\n";
                 })->delay(1000);
             })
-            ->switch()
             ->map([$this->serializer, 'deserialize'])
             ->subscribe($observer);
     }

@@ -64,9 +64,9 @@ final class Client
 
         $goodByeMsg = $goodByeMsg->do([$this->onClose, 'onNext']);
 
-        $abortMsg = $abortMsg->do([$this->onClose, 'onNext']);
-
         $remainingMsgs = $remainingMsgs->merge($goodByeMsg);
+
+        $abortMsg = $abortMsg->do([$this->onClose, 'onNext']);
 
         $challenge = $this->challenge($challengeMsg)->do([$webSocket, 'onNext']);
 
@@ -90,13 +90,6 @@ final class Client
         $this->disposable->add($webSocket);
     }
 
-    /**
-     * @param string $uri
-     * @param array $args
-     * @param array $argskw
-     * @param array $options
-     * @return Observable
-     */
     public function call(string $uri, array $args = [], array $argskw = [], array $options = null): Observable
     {
         return $this->session
@@ -107,12 +100,6 @@ final class Client
             ->take(1);
     }
 
-    /**
-     * @param string $uri
-     * @param callable $callback
-     * @param array $options
-     * @return Observable
-     */
     public function register(string $uri, callable $callback, array $options = []): Observable
     {
         return $this->registerExtended($uri, $callback, $options, false);
@@ -122,37 +109,19 @@ final class Client
      * This is a variant of call, that expects the far end to emit more than one result.  It will also repeat the call,
      * if the websocket connection resets and the observable has not completed or errored.
      *
-     * @param string $uri
-     * @param array $args
-     * @param array $argskw
-     * @param array $options
-     * @return Observable
      */
     public function progressiveCall(string $uri, array $args = [], array $argskw = [], array $options = null): Observable
     {
         $options['receive_progress'] = true;
 
-        return Observable::defer(function () use ($uri, $args, $argskw, $options) {
-            $completed = new Subject();
-
-            return $this->session
-                ->takeUntil($completed)
-                ->flatMapLatest(function ($res) use ($completed, $uri, $args, $argskw, $options) {
-                    [$messages, $webSocket] = $res;
-                    return (new CallObservable($uri, $messages, $webSocket, $args, $argskw, $options))
-                        ->doOnCompleted(function () use ($completed) {
-                            $completed->onNext(0);
-                        });
-                });
-        });
+        return $this->session
+            ->flatMapLatest(function ($res) use ($uri, $args, $argskw, $options) {
+                [$messages, $webSocket] = $res;
+                return new CallObservable($uri, $messages, $webSocket, $args, $argskw, $options);
+            })
+            ->retryWhen([$this, '_reconnect']);
     }
 
-    /**
-     * @param string $uri
-     * @param callable $callback
-     * @param array $options
-     * @return Observable
-     */
     public function progressiveRegister(string $uri, callable $callback, array $options = []): Observable
     {
         $options['progress']                 = true;
@@ -162,13 +131,6 @@ final class Client
         return $this->registerExtended($uri, $callback, $options);
     }
 
-    /**
-     * @param string $uri
-     * @param callable $callback
-     * @param array $options
-     * @param bool $extended
-     * @return Observable
-     */
     public function registerExtended(string $uri, callable $callback, array $options = [], bool $extended = true): Observable
     {
         return $this->session->flatMapLatest(function ($res) use ($uri, $callback, $options, $extended) {
@@ -177,11 +139,6 @@ final class Client
         });
     }
 
-    /**
-     * @param string $uri
-     * @param array $options
-     * @return Observable
-     */
     public function topic(string $uri, array $options = []): Observable
     {
         return $this->session->flatMapLatest(function ($res) use ($uri, $options) {
@@ -190,13 +147,6 @@ final class Client
         });
     }
 
-    /**
-     * @param string $uri
-     * @param mixed | Observable $obs
-     * @param array $options
-     * @return DisposableInterface
-     * @throws \InvalidArgumentException
-     */
     public function publish(string $uri, $obs, array $options = []): DisposableInterface
     {
         $obs = $obs instanceof Observable ? $obs : Observable::of($obs);
@@ -206,7 +156,7 @@ final class Client
         return $this->session
             ->takeUntil($completed->delay(1))
             ->pluck(1)
-            ->map(function ( $webSocket) use ($obs, $completed, $uri, $options) {
+            ->map(function ($webSocket) use ($obs, $completed, $uri, $options) {
                 return $obs
                     ->finally(function () use ($completed) {
                         $completed->onNext(0);
@@ -250,7 +200,7 @@ final class Client
         return $attempts
             ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
                 $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
-                $seconds = number_format((float)$delay / 1000, 3, '.', '');;
+                $seconds = number_format((float)$delay / 1000, 3, '.', '');
                 echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
                 return Observable::timer((int)$delay);
             })

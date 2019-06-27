@@ -102,9 +102,9 @@ final class RegisterObservable extends Observable
 
                 try {
                     if ($this->extended) {
-                        $result = call_user_func_array($this->callback, [$msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails(), $msg]);
+                        $result = \call_user_func($this->callback, $msg->getArguments(), $msg->getArgumentsKw(), $msg->getDetails(), $msg);
                     } else {
-                        $result = call_user_func_array($this->callback, $msg->getArguments());
+                        $result = \call_user_func_array($this->callback, $msg->getArguments());
                     }
                 } catch (\Throwable $e) {
                     $result = Observable::error($e);
@@ -118,15 +118,15 @@ final class RegisterObservable extends Observable
                     $returnObs = $resultObs
                         ->take(1)
                         ->map(function ($value) use ($msg) {
-                            return [$value, $msg, $this->options];
+                            return new YieldMessage($msg->getRequestId(), new \stdClass(), [$value]);
                         });
                 } else {
 
                     $returnObs = $resultObs
                         ->map(function ($value) use ($msg) {
-                            return [$value, $msg, $this->options];
+                            return new YieldMessage($msg->getRequestId(), (object)['progress' => true], [$value]);
                         })
-                        ->concat(Observable::of([null, $msg, ["progress" => false]], $this->scheduler));
+                        ->concat(Observable::of(new YieldMessage($msg->getRequestId(), new \stdClass()), $this->scheduler));
                 }
 
                 $interruptMsg = $this->messages
@@ -135,8 +135,15 @@ final class RegisterObservable extends Observable
                     })
                     ->take(1);
 
+                $errorMsg = $this->messages
+                    ->filter(function (Message $m) use ($msg) {
+                        return $m instanceof ErrorMessage && $m->getRequestId() === $msg->getRequestId();
+                    })
+                    ->take(1);
+
                 return $returnObs
                     ->takeUntil($interruptMsg)
+                    ->takeUntil($errorMsg)
                     ->catch(function (\Throwable $ex) use ($msg) {
                         $invocationError = $ex instanceof WampErrorException
                             ? WampInvocationException::withInvocationMessageAndWampErrorException($msg, $ex)
@@ -145,12 +152,6 @@ final class RegisterObservable extends Observable
                         $this->invocationErrors->onNext($invocationError);
                         return Observable::empty($this->scheduler);
                     });
-            })
-            ->map(function ($args) {
-                /* @var $invocationMsg InvocationMessage */
-                list($value, $invocationMsg, $options) = $args;
-
-                return new YieldMessage($invocationMsg->getRequestId(), $options, [$value]);
             })
             ->subscribe($this->ws);
 
