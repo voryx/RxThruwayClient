@@ -3,6 +3,7 @@
 namespace Rx\Thruway\Subject;
 
 use function EventLoop\getLoop;
+use React\Socket\ConnectorInterface;
 use Rx\DisposableInterface;
 use Rx\Observable;
 use Rx\ObserverInterface;
@@ -22,14 +23,14 @@ final class WebSocketSubject extends Subject
     private $closeObserver;
     private $serializer;
 
-    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null)
+    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, ConnectorInterface $connector)
     {
         $this->openObserver  = $openObserver ?? new Subject();
         $this->closeObserver = $closeObserver ?? new Subject();
         $this->serializer    = new JsonSerializer();
         $this->sendSubject   = new ReplaySubject();
 
-        $this->ws = new Client($url, false, $protocols, getLoop());
+        $this->ws = new Client($url, false, $protocols, getLoop(), $connector);
     }
 
     public function onNext($value)
