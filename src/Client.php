@@ -26,7 +26,7 @@ final class Client
 
     private $currentRetryCount = 0;
 
-    public function __construct(string $url, string $realm, array $options = [], Subject $webSocket = null, Observable $messages = null, Observable $session = null, ConnectorInterface $connector)
+    public function __construct(string $url, string $realm, array $options = [], Subject $webSocket = null, Observable $messages = null, Observable $session = null, ConnectorInterface $connector = null)
     {
         $this->disposable = new CompositeDisposable();
         $this->onClose    = new Subject();
