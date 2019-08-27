@@ -23,7 +23,7 @@ final class WebSocketSubject extends Subject
     private $closeObserver;
     private $serializer;
 
-    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, ConnectorInterface $connector)
+    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, ConnectorInterface $connector = null)
     {
         $this->openObserver  = $openObserver ?? new Subject();
         $this->closeObserver = $closeObserver ?? new Subject();
