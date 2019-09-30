@@ -49,7 +49,12 @@ final class Client
                 $options['roles'] = $this->roles();
                 return new HelloMessage($realm, (object)$options);
             })
-            ->subscribe([$webSocket, 'onNext']);
+            ->subscribe(
+                [$webSocket, 'onNext'],
+                function (\Throwable $e) {
+                    echo 'Error while opening websocket connection: ' . $e->getMessage() . PHP_EOL;
+                }
+            );
 
         [$challengeMsg, $remainingMsgs] = $messages->partition(function (Message $msg) {
             return $msg instanceof ChallengeMessage;
