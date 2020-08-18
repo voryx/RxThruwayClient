@@ -497,4 +497,40 @@ class CallObservableTest extends FunctionalTestCase
             onCompleted(252)
         ], $results->getMessages());
     }
+
+    /**
+     * @test
+     */
+    public function progressive_error_after_result() {
+        $args    = ["testing"];
+
+        $resultMessage = new ResultMessage(null, (object)['progress' => true], $args, null);
+        $errorMessage = new ErrorMessage(CallMessage::MSG_CALL, 123, (object)[], 'error.something');
+
+        $webSocket = new Subject();
+        $webSocket->subscribe(function (CallMessage $msg) use ($resultMessage, $errorMessage) {
+            $requestId = $msg->getRequestId();
+            $resultMessage->setRequestId($requestId);
+            $errorMessage->setRequestId($requestId);
+        });
+
+        $messages = $this->createHotObservable([
+                                                   onNext(150, 1),
+                                                   onNext(210, new WelcomeMessage(12345, new \stdClass())),
+                                                   onNext(250, $resultMessage),
+                                                   onNext(300, $errorMessage),
+                                                   onCompleted(350)
+                                               ]);
+
+        $results = $this->scheduler->startWithDispose(function () use ($messages, $webSocket) {
+            return new CallObservable('testing.uri', $messages, $webSocket, null, null, ['receive_progress' => true], 3000, $this->scheduler);
+        }, 355);
+
+        $exception = new WampErrorException($errorMessage->getErrorURI() . ':testing.uri', $errorMessage->getArguments());
+
+        $this->assertMessages([
+                                  onNext(250, $resultMessage),
+                                  onError(301, $exception)
+                              ], $results->getMessages());
+    }
 }

@@ -48,11 +48,15 @@ final class CallObservable extends Observable
         $requestId = Utils::getUniqueId();
         $callMsg   = new CallMessage($requestId, $this->options, $this->uri, $this->args, $this->argskw);
 
-        $msg = $this->messages
+        $result = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
-                return $msg instanceof ResultMessage && $msg->getRequestId() === $requestId;
+                return ($msg instanceof ResultMessage && $msg->getRequestId() === $requestId)
+                    || ($msg instanceof ErrorMessage && $msg->getErrorRequestId() === $requestId);
             })
-            ->flatMap(function (ResultMessage $msg) {
+            ->flatMap(function (Message $msg) {
+                if ($msg instanceof ErrorMessage) {
+                    return Observable::error(new WampErrorException($msg->getErrorURI() . ':' . $this->uri, $msg->getArguments()), $this->scheduler);
+                }
 
                 static $i = -1;
                 $i++;
@@ -69,10 +73,8 @@ final class CallObservable extends Observable
                     ], $this->scheduler);
                 }
                 return Observable::of($msg);
-            });
-
-        //Take until we get a result without progress
-        $resultMsg = $msg
+            })
+            //Take until we get a result without progress
             ->takeWhile(function (ResultMessage $msg) {
                 $details = $msg->getDetails();
                 return (bool)($details->progress ?? false);
@@ -80,17 +82,11 @@ final class CallObservable extends Observable
             ->finally(function () {
                 $this->completed = true;
             })
-            ->share();
-
-        $error = $this->messages
-            ->filter(function (Message $msg) use ($requestId) {
-                return $msg instanceof ErrorMessage && $msg->getErrorRequestId() === $requestId;
-            })
-            ->flatMap(function (ErrorMessage $msg) {
-                return Observable::error(new WampErrorException($msg->getErrorURI() . ':' . $this->uri, $msg->getArguments()), $this->scheduler);
-            })
-            ->takeUntil($resultMsg)
-            ->take(1);
+            ->map(function (ResultMessage $msg) {
+                $details = $msg->getDetails();
+                unset($details->progress);
+                return new ResultMessage($msg->getRequestId(), $details, $msg->getArguments(), $msg->getArgumentsKw());
+            });
 
         try {
             $this->webSocket->onNext($callMsg);
@@ -98,14 +94,6 @@ final class CallObservable extends Observable
             $observer->onError($e);
             return new EmptyDisposable();
         }
-
-        $result = $error
-            ->merge($resultMsg)
-            ->map(function (ResultMessage $msg) {
-                $details = $msg->getDetails();
-                unset($details->progress);
-                return new ResultMessage($msg->getRequestId(), $details, $msg->getArguments(), $msg->getArgumentsKw());
-            });
 
         return new CompositeDisposable([
             new CallbackDisposable(function () use ($requestId) {
