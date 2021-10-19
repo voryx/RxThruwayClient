@@ -37,17 +37,17 @@
     ]
   },
   "require": {
-    "php": "^7.1",
+    "php": ">=7.1",
     "voryx/thruway-common": "^1.0.0",
     "reactivex/rxphp": "^2.0.4",
     "rx/websocket": "^2.1.1"
-  },
-  "require-dev": {
-    "phpunit/phpunit": "^5.5"
   },
   "extra": {
     "branch-alias": {
       "dev-master": "2.0-dev"
     }
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.5"
   }
 }
