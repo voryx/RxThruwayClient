@@ -23,14 +23,14 @@ final class WebSocketSubject extends Subject
     private $closeObserver;
     private $serializer;
 
-    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, ConnectorInterface $connector = null)
+    public function __construct(string $url, array $protocols = [], Subject $openObserver = null, Subject $closeObserver = null, ConnectorInterface $connector = null, array $headers = [])
     {
         $this->openObserver  = $openObserver ?? new Subject();
         $this->closeObserver = $closeObserver ?? new Subject();
         $this->serializer    = new JsonSerializer();
         $this->sendSubject   = new ReplaySubject();
 
-        $this->ws = new Client($url, false, $protocols, getLoop(), $connector);
+        $this->ws = new Client($url, false, $protocols, getLoop(), $connector, 60000, $headers);
     }
 
     public function onNext($value)

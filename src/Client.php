@@ -26,7 +26,7 @@ final class Client
 
     private $currentRetryCount = 0;
 
-    public function __construct(string $url, string $realm, array $options = [], Subject $webSocket = null, Observable $messages = null, Observable $session = null, ConnectorInterface $connector = null)
+    public function __construct(string $url, string $realm, array $options = [], Subject $webSocket = null, Observable $messages = null, Observable $session = null, ConnectorInterface $connector = null, array $headers = [])
     {
         $this->disposable = new CompositeDisposable();
         $this->onClose    = new Subject();
@@ -37,7 +37,7 @@ final class Client
         $open  = new Subject();
         $close = new Subject();
 
-        $webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close, $connector);
+        $webSocket = $webSocket ?: new WebSocketSubject($url, ['wamp.2.json'], $open, $close, $connector, $headers);
         $messages  = $messages ?: $webSocket->retryWhen([$this, '_reconnect'])->singleInstance();
 
         //When the connection opens, send a HelloMessage

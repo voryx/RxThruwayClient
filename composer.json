@@ -40,7 +40,7 @@
     "php": ">=7.1",
     "voryx/thruway-common": "^1.0.0",
     "reactivex/rxphp": "^2.0.4",
-    "rx/websocket": "^2.1.1"
+    "rx/websocket": "^2.1.7"
   },
   "extra": {
     "branch-alias": {
