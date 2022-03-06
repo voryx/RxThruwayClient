@@ -204,7 +204,7 @@ final class Client
         $maxRetries        = 150;
 
         return $attempts
-            ->flatMap(function (\Exception $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
+            ->flatMap(function (\Throwable $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
                 $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
                 $seconds = number_format((float)$delay / 1000, 3, '.', '');
                 echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
