@@ -207,7 +207,7 @@ final class Client
             ->flatMap(function (\Throwable $ex) use ($maxRetryDelay, $retryDelayGrowth, $initialRetryDelay) {
                 $delay   = min($maxRetryDelay, pow($retryDelayGrowth, ++$this->currentRetryCount) + $initialRetryDelay);
                 $seconds = number_format((float)$delay / 1000, 3, '.', '');
-                echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in ${seconds} seconds...", PHP_EOL;
+                echo 'Error: ', $ex->getMessage(), PHP_EOL, "Reconnecting in {$seconds} seconds...", PHP_EOL;
                 return Observable::timer((int)$delay);
             })
             ->take($maxRetries);
