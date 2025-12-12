@@ -18,7 +18,7 @@ class RawArgs
         return $this->args;
     }
 
-    public function getKwargs(): array
+    public function getKwArgs(): array
     {
         return $this->kwargs;
     }
