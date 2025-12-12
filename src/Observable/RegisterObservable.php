@@ -8,6 +8,7 @@ use Rx\ObserverInterface;
 use Rx\Scheduler;
 use Rx\SchedulerInterface;
 use Rx\Subject\Subject;
+use Rx\Thruway\RawArgs;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
 use Rx\Disposable\CallbackDisposable;
@@ -118,13 +119,13 @@ final class RegisterObservable extends Observable
                     $returnObs = $resultObs
                         ->take(1)
                         ->map(function ($value) use ($msg) {
-                            return new YieldMessage($msg->getRequestId(), new \stdClass(), [$value]);
+                            return new YieldMessage($msg->getRequestId(), new \stdClass(), $value instanceof RawArgs ? $value->getArgs() : [$value], $value instanceof RawArgs ? $value->getKwArgs() : null);
                         });
                 } else {
 
                     $returnObs = $resultObs
                         ->map(function ($value) use ($msg) {
-                            return new YieldMessage($msg->getRequestId(), (object)['progress' => true], [$value]);
+                            return new YieldMessage($msg->getRequestId(), (object)['progress' => true], $value instanceof RawArgs ? $value->getArgs() : [$value], $value instanceof RawArgs ? $value->getKwArgs() : null);
                         })
                         ->concat(Observable::of(new YieldMessage($msg->getRequestId(), new \stdClass()), $this->scheduler));
                 }
