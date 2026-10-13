@@ -43,6 +43,20 @@ $wamp->register('add.rpc', function ($a, $b) { return $a + $b; })->subscribe();
 
 >If the Registration Handler throws an exception, `thruway.error.invocation_exception` is returned to the caller. If you would like to allow more specific error messages, you must throw a `WampErrorException` or, if using observable sequences that are returned from the RPC, you can `onError` a `WampErrorException`.
 
+### Registration revocation
+
+If the router revokes a registration (WAMP advanced profile `registration_revocation`), the register observable errors with a `Rx\Thruway\Observable\RegistrationRevokedException`. It extends `WampErrorException` and exposes the revoked registration id and the router's reason, if one was given. The registration no longer exists on the router at that point, so no `UNREGISTER` is sent. To register again, resubscribe:
+
+```PHP
+$wamp->register('add.rpc', function ($a, $b) { return $a + $b; })
+    ->retryWhen(function (Observable $errors) {
+        return $errors->filter(function (\Throwable $e) {
+            return $e instanceof RegistrationRevokedException;
+        });
+    })
+    ->subscribe();
+```
+
 ## Publish to topic
 
 ```PHP

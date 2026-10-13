@@ -4,10 +4,12 @@ namespace Rx\Thruway\Observable;
 
 use Rx\DisposableInterface;
 use Rx\Observable;
+use Rx\Observer\AutoDetachObserver;
 use Rx\ObserverInterface;
 use Rx\Scheduler;
 use Rx\SchedulerInterface;
 use Rx\Subject\Subject;
+use Rx\Thruway\Message\RegistrationRevokedMessage;
 use Rx\Thruway\RawArgs;
 use Thruway\Common\Utils;
 use Thruway\WampErrorException;
@@ -40,7 +42,12 @@ final class RegisterObservable extends Observable
         $disposable     = new CompositeDisposable();
         $registerMsg    = new RegisterMessage($requestId, (object)$this->options, $this->uri);
         $registrationId = null;
-        $completed      = false;
+        $unregistered   = false;
+
+        //Tear down invocation handling and the message subscriptions as soon as the registration ends,
+        //whether through completion, a WAMP error, or a revocation by the router
+        $observer = new AutoDetachObserver($observer);
+        $observer->setDisposable($disposable);
 
         $unregisteredMsg = $this->messages
             ->filter(function (Message $msg) use ($requestId) {
@@ -75,8 +82,22 @@ final class RegisterObservable extends Observable
             ->takeUntil($registeredMsg)
             ->take(1);
 
-        $unregister = function () use ($requestId, &$registrationId, &$completed) {
-            if (!$registrationId || $completed) {
+        //The Dealer revoked our registration ([UNREGISTERED, 0, {"registration": id, "reason": string}])
+        $revoked = $registeredMsg
+            ->flatMap(function (RegisteredMessage $registeredMsg) {
+                return $this->messages->filter(function (Message $msg) use ($registeredMsg) {
+                    return $msg instanceof RegistrationRevokedMessage && $msg->getRegistrationId() === $registeredMsg->getRegistrationId();
+                });
+            })
+            ->take(1)
+            ->flatMap(function (RegistrationRevokedMessage $msg) use (&$unregistered) {
+                //The registration is already gone on the router, so there is nothing to unregister on dispose
+                $unregistered = true;
+                return Observable::error(new RegistrationRevokedException($msg->getRegistrationId(), $msg->getReason(), $msg->getDetails()), $this->scheduler);
+            });
+
+        $unregister = function () use ($requestId, &$registrationId, &$unregistered) {
+            if (!$registrationId || $unregistered) {
                 return;
             }
             $unregisterMsg = new UnregisterMessage(Utils::getUniqueId(), $registrationId);
@@ -88,12 +109,13 @@ final class RegisterObservable extends Observable
         $registerSubscription = $registeredMsg
             ->merge($unregisteredMsg)
             ->merge($error)
+            ->merge($revoked)
             ->subscribe(
                 [$observer, 'onNext'],
                 [$observer, 'onError'],
-                function () use (&$completed, $observer, $unregister) {
+                function () use (&$unregistered, $observer, $unregister) {
                     $unregister();
-                    $completed = true;
+                    $unregistered = true;
                     $observer->onCompleted();
                 }
             );

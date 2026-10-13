@@ -10,7 +10,7 @@ use Rx\ObserverInterface;
 use Rx\Subject\ReplaySubject;
 use Rx\Subject\Subject;
 use Rx\Websocket\Client;
-use Thruway\Serializer\JsonSerializer;
+use Rx\Thruway\Serializer\JsonSerializer;
 
 /**
  * Class WebSocket - WebSocket wrapper that queues messages while the connection is being established.

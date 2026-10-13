@@ -4,7 +4,9 @@ namespace Rx\Thruway\Tests\Functional\Observable;
 
 use Rx\Observable;
 use Rx\Subject\Subject;
+use Rx\Thruway\Message\RegistrationRevokedMessage;
 use Rx\Thruway\Observable\RegisterObservable;
+use Rx\Thruway\Observable\RegistrationRevokedException;
 use Rx\Thruway\Tests\Functional\FunctionalTestCase;
 use Thruway\Message\ErrorMessage;
 use Thruway\Message\InvocationMessage;
@@ -694,7 +696,7 @@ class RegisterObservableTest extends FunctionalTestCase
         ], $this->getWampMessages());
 
         $this->assertSubscriptions([
-            subscribe(200, 350)
+            subscribe(200, 251)
         ], $messages->getSubscriptions());
     }
 
@@ -784,5 +786,154 @@ class RegisterObservableTest extends FunctionalTestCase
             [260, '[8,68,12345,{},"my.custom.error",[1],{"someKw":"someArg"}]'], //ErrorMessage
             [350, '[66,12345,54321]'] //UnregisterMessage
         ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    public function register_revoked_by_router()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $revokedMsg    = new RegistrationRevokedMessage(0, ['registration' => 54321, 'reason' => 'moving endpoint to other callee']);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $registeredMsg->setRequestId($msg->getRequestId());
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(300, $revokedMsg),
+            onNext(310, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onError(301, new RegistrationRevokedException(54321, 'moving endpoint to other callee'))
+        ], $results->getMessages());
+
+        $results->getMessages()[1]->getValue()->accept(null, function (RegistrationRevokedException $e) {
+            $this->assertSame(54321, $e->getRegistrationId());
+            $this->assertSame('moving endpoint to other callee', $e->getReason());
+            $this->assertSame('moving endpoint to other callee', $e->getMessage());
+            $this->assertSame(RegistrationRevokedException::ERROR_URI, $e->getErrorUri());
+            $this->assertEquals((object)['registration' => 54321, 'reason' => 'moving endpoint to other callee'], $e->getDetails());
+        });
+
+        //The registration was already removed by the router, so no UnregisterMessage is sent and the later invocation is ignored
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'] //RegisterMessage
+        ], $this->getWampMessages());
+
+        $this->assertSubscriptions([
+            subscribe(200, 301)
+        ], $messages->getSubscriptions());
+    }
+
+    /**
+     * @test
+     */
+    public function register_ignores_revocation_of_other_registration()
+    {
+        $registeredMsg = new RegisteredMessage(null, 54321);
+        $revokedMsg    = new RegistrationRevokedMessage(0, ['registration' => 99999]);
+        $invocationMsg = new InvocationMessage(44444, 54321, new \stdClass());
+
+        $webSocket = new Subject();
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsg) {
+            if ($msg instanceof RegisterMessage) {
+                $registeredMsg->setRequestId($msg->getRequestId());
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsg),
+            onNext(300, $revokedMsg),
+            onNext(310, $invocationMsg),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler);
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsg),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'], //RegisterMessage
+            [311, '[70,12345,{},[0]]'], //YieldMessage
+            [350, '[66,12345,54321]'] //UnregisterMessage
+        ], $this->getWampMessages());
+    }
+
+    /**
+     * @test
+     */
+    public function register_revoked_then_retry_reregisters()
+    {
+        $registeredMsgs = [new RegisteredMessage(null, 54321), new RegisteredMessage(null, 54322)];
+        $revokedMsg     = new RegistrationRevokedMessage(0, ['registration' => 54321, 'reason' => 'moving endpoint to other callee']);
+
+        $registerCount = 0;
+        $webSocket     = new Subject();
+        $webSocket->subscribe(function (Message $msg) use ($registeredMsgs, &$registerCount) {
+            if ($msg instanceof RegisterMessage) {
+                $registeredMsgs[$registerCount++]->setRequestId($msg->getRequestId());
+            }
+            $this->recordWampMessage($msg);
+        });
+
+        $messages = $this->createHotObservable([
+            onNext(150, 1),
+            onNext(201, new WelcomeMessage(12345, new \stdClass())),
+            onNext(250, $registeredMsgs[0]),
+            onNext(300, $revokedMsg),
+            onNext(320, $registeredMsgs[1]),
+            onCompleted(350)
+        ]);
+
+        $results = $this->scheduler->startWithCreate(function () use ($messages, $webSocket) {
+            return (new RegisterObservable('testing.uri', [$this, 'callable'], $messages, $webSocket, [], false, null, $this->scheduler))
+                ->retryWhen(function (Observable $errors) {
+                    return $errors->filter(function (\Throwable $e) {
+                        return $e instanceof RegistrationRevokedException;
+                    });
+                });
+        });
+
+        $this->assertMessages([
+            onNext(250, $registeredMsgs[0]),
+            onNext(320, $registeredMsgs[1]),
+            onCompleted(350)
+        ], $results->getMessages());
+
+        //Re-registering sends a fresh RegisterMessage, and only the live registration is unregistered at the end
+        $this->assertWampMessages([
+            [200, '[64,12345,{},"testing.uri"]'], //RegisterMessage
+            [301, '[64,12345,{},"testing.uri"]'], //RegisterMessage (retry)
+            [350, '[66,12345,54322]'] //UnregisterMessage
+        ], $this->getWampMessages());
+
+        $this->assertSubscriptions([
+            subscribe(200, 301),
+            subscribe(301, 350)
+        ], $messages->getSubscriptions());
     }
 }
